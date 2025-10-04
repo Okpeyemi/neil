@@ -2,14 +2,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface Message { id: string; role: 'user' | 'assistant'; content: string }
+interface Message { id: string; role: 'user' | 'assistant'; content: string; html?: string }
 interface Article { title: string; link: string }
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [articles, setArticles] = useState<Article[] | null>(null);
+  const [usedArticles, setUsedArticles] = useState<Article[] | null>(null);
   const [input, setInput] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [mode, setMode] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
 
@@ -17,7 +19,7 @@ export default function ChatPage() {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, articles]);
+  }, [messages, articles, usedArticles]);
 
   async function sendMessage(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -30,14 +32,28 @@ export default function ChatPage() {
     setLoading(true);
     try {
       const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: nextMessages.map(m => ({ role: m.role, content: m.content })) }) });
-      const data: { reply?: string; error?: string; articles?: Article[]; mode?: string } = await res.json();
+      const data: { reply?: string; error?: string; articles?: Article[]; mode?: string; usedArticles?: Article[]; html?: string } = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
+      setMode(data.mode || null);
       if (data.mode === 'articles_only') {
         setArticles(data.articles || null);
+        setUsedArticles(null);
+      } else if (data.mode === 'fused_articles') {
+        const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: data.reply || '' };
+        setMessages(m => [...m, reply]);
+        setArticles(data.articles || null);
+        setUsedArticles(data.usedArticles || null);
+      } else if (data.mode === 'scraped') {
+        // Render server-scraped HTML directly in the chat
+        const replyHtml: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', html: data.html || '' };
+        setMessages(m => [...m, replyHtml]);
+        setArticles(data.articles || null);
+        setUsedArticles(data.articles || null);
       } else {
         const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: data.reply || '' };
         setMessages(m => [...m, reply]);
         setArticles(data.articles && data.articles.length ? data.articles : null);
+        setUsedArticles(null);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'inconnue';
@@ -54,6 +70,8 @@ export default function ChatPage() {
     }
   }
 
+  const displayArticles = usedArticles || articles;
+
   return (
     <div className="flex flex-col h-screen w-full max-w-3xl mx-auto">
       <header className="p-4 flex items-center gap-4 text-sm text-neutral-400">
@@ -69,20 +87,32 @@ export default function ChatPage() {
         )}
         <div className="space-y-4 pb-40">
           {messages.map(m => (
-            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}> 
-              <div className={`rounded-2xl px-4 py-2 max-w-[80%] whitespace-pre-wrap leading-relaxed text-sm shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-100'}`}>{m.content}</div>
+            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {m.html ? (
+                <div
+                  className={`rounded-2xl px-4 py-3 max-w-[90%] text-sm shadow-sm bg-neutral-900/70 text-neutral-100 border border-neutral-700`}
+                >
+                  <div
+                    className="space-y-3"
+                    dangerouslySetInnerHTML={{ __html: m.html }}
+                  />
+                </div>
+              ) : (
+                <div className={`rounded-2xl px-4 py-2 max-w-[80%] whitespace-pre-wrap leading-relaxed text-sm shadow-sm ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-neutral-800 text-neutral-100'}`}>{m.content}</div>
+              )}
             </div>
           ))}
-          {articles && (
+          {displayArticles && (
             <div className="flex justify-start">
               <div className="rounded-2xl px-4 py-3 bg-neutral-900/70 border border-neutral-700 max-w-[90%] text-sm text-neutral-200 space-y-2">
-                <div className="font-semibold text-neutral-100">Articles liés (biologie spatiale)</div>
+                <div className="font-semibold text-neutral-100">{mode === 'fused_articles' ? 'Sources utilisées' : mode === 'scraped' ? 'Contenu extrait des sources' : 'Articles liés (biologie spatiale)'}</div>
                 <ul className="list-disc list-inside space-y-1">
-                  {articles.map(a => (
-                    <li key={a.link} className="break-words"><a href={a.link} target="_blank" rel="noopener" className="text-blue-400 hover:underline">{a.title}</a></li>
+                  {displayArticles.map((a,i) => (
+                    <li key={a.link} className="break-words"><a href={a.link} target="_blank" rel="noopener" className="text-blue-400 hover:underline">[{i+1}] {a.title}</a></li>
                   ))}
                 </ul>
-                <p className="text-[10px] opacity-60">Sélection basée sur votre requête. Les liens s&apos;ouvrent dans un nouvel onglet.</p>
+                {mode === 'fused_articles' && <p className="text-[10px] opacity-60">Réponse synthétisée uniquement à partir de ces sources citées.</p>}
+                {mode === 'articles_only' && <p className="text-[10px] opacity-60">Mode articles uniquement (pas de génération).</p>}
               </div>
             </div>
           )}
@@ -96,7 +126,7 @@ export default function ChatPage() {
       <form onSubmit={sendMessage} className="fixed bottom-0 left-0 right-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent">
         <div className="max-w-3xl mx-auto p-4">
           <div className="flex items-center gap-2 bg-neutral-900/80 border border-neutral-700 rounded-full px-4 py-2 backdrop-blur shadow-lg">
-            <button type="button" className="text-neutral-400 hover:text-neutral-200" title="New conversation" onClick={() => { setMessages([]); setArticles(null); }}>+
+            <button type="button" className="text-neutral-400 hover:text-neutral-200" title="New conversation" onClick={() => { setMessages([]); setArticles(null); setUsedArticles(null); setMode(null); }}>+
             </button>
             <input
               className="flex-1 bg-transparent outline-none text-sm placeholder-neutral-500"

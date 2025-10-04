@@ -1,15 +1,19 @@
 import { NextRequest } from 'next/server';
+import { parse } from 'node-html-parser'; // still used for CSV parsing (simple)
+import { batchScrape, Article, ScrapedArticle } from '@/lib/scrape';
 
 // Simple schema of request body
 interface ChatRequestBody {
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+  // When true, server will attempt to scrape & summarize related articles instead of just returning list
+  summarize?: boolean;
 }
 
 interface OpenRouterChoiceMessage { role: string; content: string }
 interface OpenRouterChoice { message?: OpenRouterChoiceMessage }
 interface OpenRouterResponse { choices?: OpenRouterChoice[] }
 
-interface Article { title: string; link: string }
+// Article / Scraped types now imported
 
 export const runtime = 'edge'; // faster cold start, streaming possible later
 
@@ -60,10 +64,15 @@ async function getArticles(): Promise<Article[]> {
   return cachedArticles;
 }
 
+// Scrape helpers now centralized in lib
+
+// Modify POST handler to incorporate summarize branch
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const model = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+    const primaryModel = process.env.OPENROUTER_MODEL_PRIMARY || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
+    const summaryModel = process.env.OPENROUTER_MODEL_SUMMARY || primaryModel;
+    const maxArticles = parseInt(process.env.SPACE_BIO_MAX_ARTICLES || '8', 10);
     if (!apiKey) {
       return new Response(JSON.stringify({ error: 'Missing OPENROUTER_API_KEY on server' }), { status: 500 });
     }
@@ -79,6 +88,7 @@ export async function POST(req: NextRequest) {
     let relatedArticles: Article[] = [];
     const augmentedMessages = body.messages.map(m => ({ role: m.role, content: m.content }));
     let articlesOnly = false;
+    const wantsSummary = !!body.summarize;
 
     if (isSpaceBiologyQuery(userText)) {
       relatedArticles = await getArticles();
@@ -86,23 +96,63 @@ export async function POST(req: NextRequest) {
         const tokens = userText.toLowerCase().split(/[^a-z0-9éèêàùç]+/).filter(Boolean);
         const scored = relatedArticles.map(a => {
           const at = a.title.toLowerCase();
-          const score = tokens.reduce((acc, t) => acc + (at.includes(t) ? 1 : 0), 0);
-          return { article: a, score };
-        }).filter(s => s.score > 0);
+            const score = tokens.reduce((acc, t) => acc + (at.includes(t) ? 1 : 0), 0);
+            return { article: a, score };
+          }).filter(s => s.score > 0);
         const top = (scored.length ? scored : relatedArticles.map(a => ({ article: a, score: 0 })))
           .sort((a,b) => b.score - a.score)
-          .slice(0, 8)
+          .slice(0, maxArticles)
           .map(s => s.article);
         relatedArticles = top;
-        // articles_only mode: do NOT call model, just return articles
-        articlesOnly = true;
+        articlesOnly = !wantsSummary; // if no summary requested, short-circuit
       }
     }
 
+    // Early return if just listing articles (no scraping / summarization)
     if (articlesOnly) {
       return new Response(JSON.stringify({ mode: 'articles_only', reply: '', articles: relatedArticles }), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    // If summarize requested and we have related articles, scrape them
+    let scraped: ScrapedArticle[] = [];
+    if (wantsSummary && relatedArticles.length) {
+      scraped = await batchScrape(relatedArticles);
+    }
+
+    // If we have scraped data, build a summary prompt
+    if (wantsSummary && scraped.length) {
+      const summaryPrompt = `You are an expert space biology analyst. Summarize the following articles. Provide:\n1. A consolidated overview (max 250 words)\n2. Key findings bullet list\n3. Notable methodologies\n4. Knowledge gaps / future directions.\n\nArticles JSON:\n${JSON.stringify(scraped.map(s => ({ title: s.title, url: s.link, text: s.text.slice(0, 4000) })), null, 2)}`.slice(0, 40_000);
+
+      const summaryResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.OPENROUTER_REFERER || 'http://localhost:3000',
+          'X-Title': process.env.OPENROUTER_TITLE || 'neil-engine',
+        },
+        body: JSON.stringify({
+          model: summaryModel,
+          messages: [
+            { role: 'system', content: 'You create concise, structured scientific syntheses.' },
+            { role: 'user', content: summaryPrompt }
+          ],
+          temperature: 0.4,
+        }),
+      });
+
+      if (!summaryResp.ok) {
+        const errTxt = await summaryResp.text();
+        return new Response(JSON.stringify({ error: 'Summary upstream error', details: errTxt }), { status: 502 });
+      }
+
+      const summaryData: OpenRouterResponse = await summaryResp.json();
+      const summary = summaryData.choices?.[0]?.message?.content || '';
+
+      return new Response(JSON.stringify({ mode: 'articles_summary', summary, articles: scraped }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Fallback: normal primary chat completion
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -112,7 +162,7 @@ export async function POST(req: NextRequest) {
         'X-Title': process.env.OPENROUTER_TITLE || 'neil-engine',
       },
       body: JSON.stringify({
-        model,
+        model: primaryModel,
         messages: augmentedMessages,
         temperature: 0.7,
       }),

@@ -62,3 +62,125 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Space Biology Article Enrichment & Summarization
+
+The `/api/chat` endpoint now detects queries related to space / microgravity biology. When triggered it can:
+
+1. Return a list of related articles (CSV sourced).
+2. Optionally scrape each article (main text + figure images) and generate a consolidated scientific summary.
+
+### Request Body Extension
+
+```
+{
+	"messages": [ { "role": "user", "content": "Explain microgravity effects on stem cells" } ],
+	"summarize": true
+}
+```
+
+If `summarize` is omitted or false you will receive only `mode: "articles_only"` with the selected article list (no scraping). When true, response mode becomes `articles_summary` including scraped content and an LLM-produced synthesis.
+
+### Response Modes
+
+| mode | Description |
+|------|-------------|
+| (absent) | Standard chat completion (topic not matched) |
+| `articles_only` | Article list only (no scraping / summary) |
+| `articles_summary` | Scraped articles + structured summary |
+
+### Scraped Article Object
+
+```
+{
+	title: string,
+	link: string,
+	text: string,      // truncated to 20k chars
+	images: [ { src: string, alt?: string, caption?: string } ] // up to 12 figures
+}
+```
+
+### Environment Variables
+
+Add (or extend) your `.env.local`:
+
+```
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL_PRIMARY=meta-llama/llama-3.3-70b-instruct:free
+OPENROUTER_MODEL_SUMMARY=meta-llama/llama-3.1-8b-instruct:free
+SPACE_BIO_CSV_URL=https://raw.githubusercontent.com/jgalazka/SB_publications/refs/heads/main/SB_publication_PMC.csv
+SPACE_BIO_MAX_ARTICLES=8
+```
+
+### Scraping Notes
+
+* Uses `node-html-parser` in the edge runtime.
+* Selects `<main>` first, falling back to `<article>` then `<body>`.
+* Removes noisy tags: script, style, nav, header, footer, aside.
+* Collects `<figure>` images (absolutized `src`, includes alt + caption).
+* 30‑minute in-memory cache (per edge region) to avoid repeated fetching.
+
+### Example
+
+```
+curl -X POST http://localhost:3000/api/chat \
+	-H 'Content-Type: application/json' \
+	-d '{"messages":[{"role":"user","content":"Recent microgravity muscle atrophy research"}],"summarize":true}'
+```
+
+### Future Ideas
+* Persist scraped content in a durable KV / database.
+* Add user-controlled filters (year, topic keywords).
+* Stream summary generation for faster UX feedback.
+* Add citation extraction & structured metadata parsing.
+
+## Direct Scraping Endpoint `/api/scrape`
+
+If vous possédez déjà une liste d'articles `{ title, link }`, vous pouvez directement récupérer le contenu principal et les figures sans passer par la détection de requête de `/api/chat`.
+
+### Requête
+
+```
+POST /api/scrape
+Content-Type: application/json
+
+{
+	"articles": [
+		{ "title": "Example 1", "link": "https://example.org/article-1" },
+		{ "title": "Example 2", "link": "https://example.org/article-2" }
+	]
+}
+```
+
+Limitations:
+* Max 12 articles par appel.
+* Chaque lien doit commencer par `http`.
+* Le texte est tronqué à ~20k caractères; jusqu'à 12 figures collectées.
+
+### Réponse
+
+```
+{
+	"articles": [
+		{
+			"title": "Example 1",
+			"link": "https://example.org/article-1",
+			"text": "Main content ...",
+			"images": [ { "src": "https://.../fig1.png", "alt": "", "caption": "Figure legend ..." } ]
+		}
+	]
+}
+```
+
+### cURL
+
+```
+curl -X POST http://localhost:3000/api/scrape \
+	-H 'Content-Type: application/json' \
+	-d '{"articles":[{"title":"Ex","link":"https://example.org"}]}'
+```
+
+### Notes Techniques
+* Réutilise les mêmes fonctions de scraping que `/api/chat` (`src/lib/scrape.ts`).
+* Cache mémoire 30 min (contenu réutilisé si relance sur même URL).
+* Aucune clé API requise pour cette route (attention à usage abusif côté déploiement public).
