@@ -109,7 +109,9 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const primaryModel = process.env.OPENROUTER_MODEL_PRIMARY || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
     const summaryModel = process.env.OPENROUTER_MODEL_SUMMARY || primaryModel;
+    const fusionModel = process.env.OPENROUTER_MODEL_FUSION || 'gpt-oss-20b';
     const maxArticles = parseInt(process.env.SPACE_BIO_MAX_ARTICLES || '20', 10);
+    const fuseArticlesMax = parseInt(process.env.SPACE_BIO_FUSE_MAX || '8', 10);
     if (!apiKey) {
       return new Response(JSON.stringify({ error: 'Missing OPENROUTER_API_KEY on server' }), { status: 500 });
     }
@@ -144,8 +146,56 @@ export async function POST(req: NextRequest) {
           .slice(0, maxArticles)
           .map(s => s.article);
         relatedArticles = top;
-        // If no summary requested, extract and return structured HTML from each article
+        // If no summary requested, FUSE articles via LLM (gpt-oss-20b) into Intro/Résultats/Conclusion with images
         if (!wantsSummary) {
+          const fuseTargets = relatedArticles.slice(0, fuseArticlesMax);
+          // Get text+images for fusion
+          const scrapedForFusion = await batchScrape(fuseTargets);
+          const fusionPayload = {
+            language_hint: /[a-zA-Z]/.test(userText) ? undefined : 'fr',
+            sources: scrapedForFusion.map((s, i) => ({ idx: i+1, title: s.title, url: s.link })),
+            documents: scrapedForFusion.map((s, i) => ({
+              idx: i+1,
+              title: s.title,
+              url: s.link,
+              text: (s.text || '').slice(0, 4000),
+              images: (s.images || []).slice(0, 6)
+            }))
+          };
+
+          const fusionPrompt = `You are a scientific writer. Create a concise, well-structured HTML answer with exactly three sections: <h2>Introduction</h2>, <h2>Résultats</h2>, <h2>Conclusion</h2>. Use only the provided documents and images. Guidelines:\n- Write in the user's language; if unsure, prefer French.\n- Cite sources inline as [n] matching the sources list.\n- In each section, you may include up to 3 relevant <figure> blocks, using provided image URLs only.\n- Each figure must be: <figure><img src=... alt=... /><figcaption>short caption + [n]</figcaption></figure>.\n- Avoid decorative logos or UI images.\n- Return ONLY valid HTML (no markdown).\n\nProvide at the end a <h3>Sources</h3> list linking to each source as [n] Title.`;
+
+          const fusionResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': process.env.OPENROUTER_REFERER || 'http://localhost:3000',
+              'X-Title': process.env.OPENROUTER_TITLE || 'neil-engine',
+            },
+            body: JSON.stringify({
+              model: fusionModel,
+              temperature: 0.4,
+              messages: [
+                { role: 'system', content: 'You merge multiple scientific documents into a single structured HTML answer. Be precise and only use provided content.' },
+                { role: 'user', content: fusionPrompt },
+                { role: 'user', content: JSON.stringify(fusionPayload).slice(0, 60000) }
+              ],
+            }),
+          });
+
+          if (fusionResp.ok) {
+            const fusionData: OpenRouterResponse = await fusionResp.json();
+            const fusedHtml = fusionData.choices?.[0]?.message?.content || '';
+            if (fusedHtml && fusedHtml.trim()) {
+              return new Response(
+                JSON.stringify({ mode: 'fused_articles', html: fusedHtml, articles: fuseTargets }),
+                { headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+
+          // If fusion failed or empty, extract and return structured HTML from each article
           const sections = await batchScrapeHtml(relatedArticles, { perArticleNodeLimit: 60, perArticleFigureLimit: 8 });
           if (sections.length) {
             const combinedHtml = sections.map(({ article, html }, idx) => (
@@ -164,14 +214,14 @@ export async function POST(req: NextRequest) {
                 : '';
               const figs = (s.images || []).slice(0, 8).map(img => {
                 const alt = img.alt ? escapeHtml(img.alt) : '';
-                const cap = img.caption ? `<figcaption style="font-size:0.8em;opacity:0.8">${escapeHtml(img.caption)}</figcaption>` : '';
-                return `<figure style="margin:0.75rem 0"><img src="${img.src}" alt="${alt}" style="max-width:100%;height:auto;display:block;margin:0.25rem 0"/>${cap}</figure>`;
+                const cap = img.caption ? `<figcaption style=\"font-size:0.8em;opacity:0.8\">${escapeHtml(img.caption)}</figcaption>` : '';
+                return `<figure style=\"margin:0.75rem 0\"><img src=\"${img.src}\" alt=\"${alt}\" style=\"max-width:100%;height:auto;display:block;margin:0.25rem 0\"/>${cap}</figure>`;
               }).join('\n');
               const body = [paras, figs].filter(Boolean).join('\n');
               if (!body.trim()) return '';
               return (
-                `<section class="scraped-article" style="margin:1rem 0;padding:0.5rem 0;border-top:1px solid rgba(255,255,255,0.08)">`+
-                `<h2 style="font-size:1rem;font-weight:600;margin-bottom:0.5rem">[${idx+1}] ${escapeHtml(s.title)} — <a href="${s.link}" target="_blank" rel="noopener nofollow noreferrer" style="color:#60a5fa;text-decoration:underline">source</a></h2>`+
+                `<section class=\"scraped-article\" style=\"margin:1rem 0;padding:0.5rem 0;border-top:1px solid rgba(255,255,255,0.08)\">`+
+                `<h2 style=\"font-size:1rem;font-weight:600;margin-bottom:0.5rem\">[${idx+1}] ${escapeHtml(s.title)} — <a href=\"${s.link}\" target=\"_blank\" rel=\"noopener nofollow noreferrer\" style=\"color:#60a5fa;text-decoration:underline\">source</a></h2>`+
                 body+
                 `</section>`
               );

@@ -39,10 +39,11 @@ export default function ChatPage() {
         setArticles(data.articles || null);
         setUsedArticles(null);
       } else if (data.mode === 'fused_articles') {
-        const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: data.reply || '' };
-        setMessages(m => [...m, reply]);
+        // Render fused HTML (Introduction, Résultats, Conclusion) with images
+        const replyHtml: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', html: data.html || '' };
+        setMessages(m => [...m, replyHtml]);
         setArticles(data.articles || null);
-        setUsedArticles(data.usedArticles || null);
+        setUsedArticles(data.articles || null);
       } else if (data.mode === 'scraped') {
         // Render server-scraped HTML directly in the chat
         const replyHtml: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', html: data.html || '' };
