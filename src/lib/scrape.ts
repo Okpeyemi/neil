@@ -4,6 +4,11 @@ export interface Article { title: string; link: string }
 export interface ScrapedImage { src: string; alt?: string; caption?: string }
 export interface ScrapedArticle extends Article { text: string; images: ScrapedImage[] }
 
+export interface ScrapeHtmlOptions {
+  perArticleNodeLimit?: number;
+  perArticleFigureLimit?: number;
+}
+
 // Limits / tuning
 const MAX_MAIN_TEXT_CHARS = 20_000;
 const MAX_IMAGES = 12;
@@ -15,7 +20,13 @@ function absolutize(url: string, base: string): string {
 
 async function scrapeArticle(url: string): Promise<{ text: string; images: ScrapedImage[] }> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SpaceBioBot/1.0)' } });
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
     if (!res.ok) return { text: '', images: [] };
     const html = await res.text();
     const root = parse(html);
@@ -62,4 +73,110 @@ export async function batchScrape(articles: Article[]): Promise<ScrapedArticle[]
     const { text, images } = await getScraped(a.link);
     return { ...a, text, images };
   }));
+}
+
+// --- HTML scraping (sanitized structured content) ---
+
+function pickMainContainer(root: HTMLElement): HTMLElement {
+  const selectors = [
+    'article',
+    'main',
+    '[role="main"]',
+    '#content',
+    '#main-content',
+    '.post-content',
+    '.entry-content',
+    '[itemprop="articleBody"]',
+    '.content',
+  ];
+  for (const sel of selectors) {
+    const found = root.querySelector(sel) as HTMLElement | null;
+    if (found) return found;
+  }
+  return root;
+}
+
+function normalizeLinksAndImages(container: HTMLElement, baseUrl: string, figureLimit: number) {
+  container.querySelectorAll('a').forEach((aEl: any) => {
+    const href = aEl.getAttribute('href');
+    if (href) aEl.setAttribute('href', absolutize(href, baseUrl));
+    aEl.setAttribute('target', '_blank');
+    aEl.setAttribute('rel', 'noopener nofollow noreferrer');
+    Object.keys(aEl.attributes || {}).forEach(k => {
+      if (k.toLowerCase().startsWith('on')) aEl.removeAttribute(k);
+    });
+  });
+
+  const figures = container.querySelectorAll('figure');
+  figures.forEach((fig: any, idx: number) => {
+    if (idx >= figureLimit) {
+      fig.remove();
+      return;
+    }
+    try { fig.setAttribute('style', 'margin:0.75rem 0;'); } catch {}
+    fig.querySelectorAll('img').forEach((img: any) => {
+      const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original');
+      if (src) img.setAttribute('src', absolutize(src, baseUrl));
+      ;['srcset','sizes','integrity','crossorigin','referrerpolicy','style','onload','onclick','onerror'].forEach(attr => img.removeAttribute(attr));
+      img.setAttribute('loading', 'lazy');
+      img.setAttribute('decoding', 'async');
+      const alt = img.getAttribute('alt') || '';
+      img.setAttribute('alt', alt);
+      try { img.setAttribute('style', 'max-width:100%;height:auto;display:block;margin:0.25rem 0;'); } catch {}
+    });
+  });
+}
+
+function extractAllowedHtml(container: HTMLElement, perArticleNodeLimit: number): string {
+  const keepSelectors = 'h1,h2,h3,h4,p,ul,ol,blockquote,pre,figure,table';
+  const nodes = container.querySelectorAll(keepSelectors);
+  const limited = nodes.slice(0, perArticleNodeLimit);
+  limited.forEach((node: any) => {
+    node.querySelectorAll('script,style,meta,link,iframe,object,embed,noscript').forEach((bad: any) => bad.remove());
+    node.querySelectorAll('*').forEach((el: any) => {
+      const attrKeys = Object.keys(el.attributes || {});
+      for (const k of attrKeys) {
+        if (k.toLowerCase().startsWith('on')) el.removeAttribute(k);
+      }
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag !== 'img' && tag !== 'figure') {
+        try { el.removeAttribute('style'); } catch {}
+      }
+    });
+  });
+  return limited.map((n: any) => n.toString()).join('\n');
+}
+
+const htmlCache = new Map<string, { ts: number; html: string }>();
+
+export async function scrapeArticleHtml(url: string, opts?: ScrapeHtmlOptions): Promise<string> {
+  const perArticleNodeLimit = opts?.perArticleNodeLimit ?? 60;
+  const perArticleFigureLimit = opts?.perArticleFigureLimit ?? 8;
+  const now = Date.now();
+  const cached = htmlCache.get(url);
+  if (cached && (now - cached.ts) < SCRAPE_TTL) return cached.html;
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SpaceBioBot/1.0)' } });
+    if (!res.ok) return '';
+    const html = await res.text();
+    const root = parse(html);
+    const main = pickMainContainer(root as unknown as HTMLElement);
+    normalizeLinksAndImages(main, url, perArticleFigureLimit);
+    const contentHtml = extractAllowedHtml(main, perArticleNodeLimit);
+    if (contentHtml && contentHtml.trim()) {
+      htmlCache.set(url, { ts: now, html: contentHtml });
+    }
+    return contentHtml;
+  } catch {
+    return '';
+  }
+}
+
+export async function batchScrapeHtml(articles: Article[], opts?: ScrapeHtmlOptions): Promise<{ article: Article; html: string }[]> {
+  const sections = await Promise.all(articles.map(async (a) => {
+    const html = await scrapeArticleHtml(a.link, opts);
+    return { article: a, html };
+  }));
+  // Keep only non-empty html
+  return sections.filter(s => s.html && s.html.trim());
 }
