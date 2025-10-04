@@ -24,3 +24,34 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Chat animations */
+@keyframes messageIn {
+  0% { opacity:0; transform: translateY(4px) scale(.98); }
+  100% { opacity:1; transform: translateY(0) scale(1); }
+}
+
+.message-appear { animation: messageIn .35s ease-out; }
+
+@keyframes typingFade {
+  0%, 80%, 100% { opacity:.2; }
+  40% { opacity:1; }
+}
+
+.typing-dots span { animation: typingFade 1s infinite; }
+.typing-dots span:nth-child(2){ animation-delay:.2s; }
+.typing-dots span:nth-child(3){ animation-delay:.4s; }
+
+/* Hide native scrollbars while keeping scroll functionality */
+.scroll-hide { scrollbar-width: none; -ms-overflow-style: none; }
+.scroll-hide::-webkit-scrollbar { display: none; }
+
+/* Microphone recording pulse */
+@keyframes micPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.55); }
+  70% { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
+  100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+}
+.mic-recording { animation: micPulse 1.6s ease-out infinite; position: relative; }
+.mic-recording::after { content:""; position:absolute; inset:0; border-radius:inherit; }
+
