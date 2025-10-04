@@ -134,6 +134,7 @@ export default function ChatPage() {
         usedArticles?: Article[];
         html?: string;
         markdown?: string;
+        fusion?: { sections: { heading: string; markdown: string; images: { src: string; alt?: string; caption?: string; citeIndex?: number }[] }[] };
       } = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
       setMode(data.mode || null);
@@ -164,6 +165,45 @@ export default function ChatPage() {
           role: "assistant",
           content: "",
           markdown: data.markdown || "",
+        };
+        setMessages((m) => {
+          const updated = [...m, replyMd];
+          messagesRef.current = updated;
+          return updated;
+        });
+        setArticles(data.articles || null);
+        setUsedArticles(data.articles || null);
+      } else if (data.mode === "fused_json") {
+        // Build Markdown from server-fused JSON (sections + resolved images)
+        console.log("FUSED_JSON", data.fusion);
+        const secs = data.fusion?.sections || [];
+        const mdCore = secs
+          .map((sec) => {
+            const body = sec.markdown || "";
+            const imgs = (sec.images || [])
+              .map((im) => {
+                const cap = im.caption
+                  ? `\n_${im.caption}${im.citeIndex ? ` [${im.citeIndex}]` : ""}_`
+                  : "";
+                return `![${im.alt || ""}](${im.src})${cap}`;
+              })
+              .join("\n\n");
+            return `## ${sec.heading || ""}\n\n${body}\n\n${imgs}`.trim();
+          })
+          .join("\n\n");
+        const sources = (data.articles || []).map((a, i) => `- [${i + 1}] [${a.title}](${a.link})`).join("\n");
+        const finalMd = mdCore + (sources ? `\n\n### Sources\n${sources}` : "");
+        console.log("FUSED_JSON_STATS", {
+          sections: secs.length,
+          images: secs.reduce((acc, s) => acc + (s.images?.length || 0), 0),
+          sources: (data.articles || []).length,
+          mdLen: finalMd.length,
+        });
+        const replyMd: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          markdown: finalMd,
         };
         setMessages((m) => {
           const updated = [...m, replyMd];

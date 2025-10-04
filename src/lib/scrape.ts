@@ -38,18 +38,62 @@ async function scrapeArticle(url: string): Promise<{ text: string; images: Scrap
     mainEl.querySelectorAll('script,style,nav,header,footer,aside').forEach((n: HTMLElement) => (n as any).remove());
     const text = mainEl.textContent.trim().replace(/\s+/g, ' ').slice(0, MAX_MAIN_TEXT_CHARS);
     const figures: ScrapedImage[] = [];
+
+    function parseSrcset(ss?: string | null): string | null {
+      if (!ss) return null;
+      // pick the first URL in srcset
+      const first = ss.split(',')[0]?.trim();
+      if (!first) return null;
+      const urlOnly = first.split(' ')[0]?.trim();
+      return urlOnly || null;
+    }
+
+    function findFigureImageUrl(fig: HTMLElement): { src: string; alt?: string } | null {
+      // Try <img> or <amp-img>
+      const img = (fig.querySelector('img') as HTMLElement | null) || (fig.querySelector('amp-img') as HTMLElement | null);
+      let raw: string | null = null;
+      let alt: string | undefined = undefined;
+      if (img) {
+        raw = img.getAttribute('src')
+          || img.getAttribute('data-src')
+          || img.getAttribute('data-original')
+          || img.getAttribute('data-lazy-src')
+          || null;
+        if (!raw) {
+          raw = parseSrcset(img.getAttribute('srcset'))
+            || parseSrcset(img.getAttribute('data-srcset'))
+            || null;
+        }
+        alt = img.getAttribute('alt') || undefined;
+      }
+      // If still nothing, try <picture><source srcset>
+      if (!raw) {
+        const srcEl = fig.querySelector('source') as HTMLElement | null;
+        const sset = srcEl?.getAttribute('srcset') || srcEl?.getAttribute('data-srcset') || null;
+        raw = parseSrcset(sset);
+      }
+      // As a last resort, try <a href> to a likely image file
+      if (!raw) {
+        const a = fig.querySelector('a') as HTMLElement | null;
+        const href = a?.getAttribute('href') || '';
+        if (/\.(png|jpe?g|webp|gif|bmp|tiff?)($|\?)/i.test(href)) raw = href;
+      }
+      if (!raw) return null;
+      const abs = absolutize(raw, url);
+      return { src: abs, alt };
+    }
+
     mainEl.querySelectorAll('figure').slice(0, MAX_IMAGES).forEach((fig: HTMLElement) => {
-      const img = fig.querySelector('img') as HTMLElement | null;
-      if (!img) return;
-      const srcRaw = img.getAttribute('src') || '';
-      if (!srcRaw) return;
-      const src = absolutize(srcRaw, url);
-      const alt = img.getAttribute('alt') || undefined;
-      let caption: string | undefined;
+      const found = findFigureImageUrl(fig);
+      if (!found) return;
       const capEl = fig.querySelector('figcaption') as HTMLElement | null;
+      let caption: string | undefined = undefined;
       if (capEl) caption = capEl.textContent.trim().replace(/\s+/g, ' ').slice(0, 400) || undefined;
-      figures.push({ src, alt, caption });
+      // Fallback alt from caption if missing
+      const altFinal = found.alt || (caption ? caption.slice(0, 120) : undefined);
+      figures.push({ src: found.src, alt: altFinal, caption });
     });
+    console.log('SCRAPE_RESULT', { url, textLen: text.length, figures: figures.length, first: figures[0]?.src || null });
     return { text, images: figures };
   } catch {
     return { text: '', images: [] };

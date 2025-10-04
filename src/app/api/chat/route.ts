@@ -103,6 +103,26 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Helpers to robustly parse model-returned JSON
+function extractJsonCandidate(s: string): string {
+  // Prefer fenced ```json blocks if present
+  const fencedJson = s.match(/```\s*json\s*([\s\S]*?)```/i);
+  if (fencedJson && fencedJson[1]) return fencedJson[1].trim();
+  const fenced = s.match(/```\s*([\s\S]*?)```/);
+  if (fenced && fenced[1]) return fenced[1].trim();
+  // Fallback: slice between first { and last }
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) return s.slice(start, end + 1);
+  return s.trim();
+}
+
+function normalizeBackslashesForJson(s: string): string {
+  // Escape stray backslashes that are not valid JSON escapes
+  // Allowed escapes: " \\ \/ \b \f \n \r \t \u
+  return s.replace(/\\(?!["\\\/bfnrtu])/g, '\\\\');
+}
+
 // Modify POST handler to incorporate summarize branch
 export async function POST(req: NextRequest) {
   try {
@@ -146,53 +166,99 @@ export async function POST(req: NextRequest) {
           .slice(0, maxArticles)
           .map(s => s.article);
         relatedArticles = top;
-        // If no summary requested, FUSE articles via LLM (gpt-oss-20b) into Intro/Résultats/Conclusion with images
+        // If no summary requested, FUSE articles via LLM into Intro/Résultats/Conclusion with images as JSON
         if (!wantsSummary) {
           const fuseTargets = relatedArticles.slice(0, fuseArticlesMax);
           // Get text+images for fusion
           const scrapedForFusion = await batchScrape(fuseTargets);
-          const fusionPayload = {
-            language_hint: /[a-zA-Z]/.test(userText) ? undefined : 'fr',
-            sources: scrapedForFusion.map((s, i) => ({ idx: i+1, title: s.title, url: s.link })),
-            documents: scrapedForFusion.map((s, i) => ({
-              idx: i+1,
-              title: s.title,
-              url: s.link,
-              text: (s.text || '').slice(0, 4000),
-              images: (s.images || []).slice(0, 6)
-            }))
-          };
+          const docsForPrompt = scrapedForFusion.map((s, i) => ({
+            idx: i + 1,
+            title: s.title,
+            url: s.link,
+            text: (s.text || '').slice(0, 4000),
+            images: (s.images || []).slice(0, 6).map((img, j) => ({ idx: j, src: img.src, alt: img.alt || '' }))
+          }));
+          console.log('FUSION_DOCS', docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url, textLen: d.text.length, imageCount: d.images.length })));
 
-          const fusionPrompt = `You are a scientific writer. Create a concise, well-structured GitHub-Flavored Markdown (GFM) answer with exactly three sections: \n\n## Introduction\n## Résultats\n## Conclusion\n\nRules:\n- Write in the user's language; if unsure, prefer French.\n- Use only the provided documents and images.\n- Cite sources inline as [n] matching the sources list.\n- You may include up to 3 relevant images per section using standard Markdown syntax: ![alt text](URL). Place a short italic caption on the next line including the citation, e.g. _Caption... [n]_.\n- Avoid decorative logos or UI images.\n- Return ONLY valid Markdown (no HTML).\n\nAt the end, add:\n\n### Sources\nList each source as [n] [Title](URL).`;
+          if (fusionModel) {
+            const fusionPrompt = `Return ONLY strict JSON (UTF-8, no markdown, no code fences) with this schema:\n{\n  "language": "fr",\n  "sections": [\n    {"heading": "Introduction", "text_markdown": "...", "imageRefs": [{"doc": 1, "img": 0, "caption": "...", "citeIndex": 1}]},\n    {"heading": "Résultats", "text_markdown": "...", "imageRefs": []},\n    {"heading": "Conclusion", "text_markdown": "...", "imageRefs": []}\n  ]\n}\nGuidelines:\n- Write in the user's language; if unsure, prefer French.\n- Use the user's query for context and produce explicit, precise text (avoid generic filler).\n- Use only the provided documents and images by their indices.\n- For each section, include 0–3 imageRefs that DIRECTLY support the claims in that section; prefer figures whose captions/keywords match the text.\n- Add inline citations [n] in text_markdown when referencing specific claims.\n- In captions, append the citation [n] where n is the source index.\n- Never invent images or URLs; reference images only by {doc, img}.\n- text_markdown must be GitHub-Flavored Markdown (GFM).\n- Do NOT wrap the output in code fences.\n- Avoid stray backslashes; only valid JSON escape sequences (\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\u) are permitted.\n- Use Markdown tables when helpful to compare findings/methods. If a simple graph would help, include a concise ASCII sketch or describe it in text.`;
 
-          const fusionResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-              'HTTP-Referer': process.env.OPENROUTER_REFERER || 'http://localhost:3000',
-              'X-Title': process.env.OPENROUTER_TITLE || 'neil-engine',
-            },
-            body: JSON.stringify({
-              model: fusionModel,
-              temperature: 0.4,
-              messages: [
-                { role: 'system', content: 'You merge multiple scientific documents into a single structured HTML answer. Be precise and only use provided content.' },
-                { role: 'user', content: fusionPrompt },
-                { role: 'user', content: JSON.stringify(fusionPayload).slice(0, 60000) }
-              ],
-            }),
-          });
+            const fusionResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.OPENROUTER_REFERER || 'http://localhost:3000',
+                'X-Title': process.env.OPENROUTER_TITLE || 'neil-engine',
+              },
+              body: JSON.stringify({
+                model: fusionModel,
+                temperature: 0.2,
+                messages: [
+                  { role: 'system', content: 'You merge multiple scientific documents into a single structured answer. Follow the JSON schema exactly.' },
+                  { role: 'user', content: fusionPrompt },
+                  { role: 'user', content: JSON.stringify({ queryOriginal: userText, queryEnglish: englishQuery, sources: docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url })), documents: docsForPrompt }).slice(0, 60000) }
+                ],
+              }),
+            });
 
-          if (fusionResp.ok) {
-            const fusionData: OpenRouterResponse = await fusionResp.json();
-            const fusedHtml = fusionData.choices?.[0]?.message?.content || '';
-            if (fusedHtml && fusedHtml.trim()) {
-              return new Response(
-                JSON.stringify({ mode: 'fused_articles', markdown: fusedHtml, articles: fuseTargets }),
-                { headers: { 'Content-Type': 'application/json' } }
-              );
+            if (fusionResp.ok) {
+              const fusionData: OpenRouterResponse = await fusionResp.json();
+              const fusedRaw = fusionData.choices?.[0]?.message?.content || '';
+              console.log('FUSION_RAW_SAMPLE', fusedRaw.slice(0, 500));
+              try {
+                const candidate = extractJsonCandidate(fusedRaw);
+                let fusedObj: any = null;
+                try {
+                  fusedObj = JSON.parse(candidate);
+                } catch (e1) {
+                  const normalized = normalizeBackslashesForJson(candidate);
+                  console.log('FUSION_JSON_NORMALIZED_APPLIED');
+                  try {
+                    fusedObj = JSON.parse(normalized);
+                  } catch (e2) {
+                    console.log('FUSION_JSON_PARSE_ERROR', (e2 as Error).message, { sample: normalized.slice(0, 400) });
+                  }
+                }
+                if (!fusedObj) {
+                  // Parsing failed; skip to fallback
+                  throw new Error('fusion_json_unparsed');
+                }
+                const sectionsIn = Array.isArray(fusedObj.sections) ? fusedObj.sections : [];
+                function tok(s: string) { return (s || '').toLowerCase().split(/[^a-z0-9éèêàùçäëïöüâôî]+/).filter(Boolean); }
+                const resolved = sectionsIn.map((sec: any) => {
+                  const secTokens = new Set(tok(String(sec.text_markdown || '') + ' ' + englishQuery));
+                  const withScores = (sec.imageRefs || []).map((ref: any) => {
+                    const d = docsForPrompt.find(dd => dd.idx === ref.doc);
+                    const im = d?.images?.find((ii: any) => ii.idx === ref.img);
+                    if (!im) return null;
+                    const imgTokens = new Set(tok((im.alt || '') + ' ' + (ref.caption || '') + ' ' + (d?.title || '')));
+                    let overlap = 0; imgTokens.forEach(t => { if (secTokens.has(t)) overlap++; });
+                    return { overlap, data: { src: im.src, alt: im.alt || '', caption: (ref.caption || ''), citeIndex: ref.citeIndex || ref.doc } };
+                  }).filter(Boolean) as { overlap: number, data: { src: string, alt: string, caption: string, citeIndex: number } }[];
+                  // Keep only with overlap > 0; if none, keep at most first 1
+                  let filtered = withScores.filter(x => x.overlap > 0).sort((a,b) => b.overlap - a.overlap).slice(0,3);
+                  if (filtered.length === 0 && withScores.length) filtered = withScores.slice(0,1);
+                  const images = filtered.map(f => f.data);
+                  console.log('FUSION_FILTER', { heading: sec.heading, total: (sec.imageRefs||[]).length, kept: images.length });
+                  return { heading: sec.heading || '', markdown: sec.text_markdown || '', images };
+                });
+                console.log('FUSION_RESOLVED', resolved.map((s: any) => ({ heading: s.heading, mdLen: (s.markdown||'').length, imgCount: s.images.length })));
+                if (resolved.length) {
+                  return new Response(
+                    JSON.stringify({ mode: 'fused_json', fusion: { sections: resolved }, articles: fuseTargets }),
+                    { headers: { 'Content-Type': 'application/json' } }
+                  );
+                }
+              } catch (e) {
+                console.log('FUSION_JSON_PARSE_ERROR', (e as Error).message);
+              }
+            } else {
+              const errTxt = await fusionResp.text();
+              console.log('FUSION_UPSTREAM_ERROR', errTxt.slice(0, 400));
             }
+          } else {
+            console.log('FUSION_SKIP', 'OPENROUTER_MODEL_FUSION not set');
           }
 
           // If fusion failed or empty, extract and return structured HTML from each article
