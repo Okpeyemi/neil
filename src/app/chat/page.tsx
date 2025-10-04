@@ -1,8 +1,10 @@
 "use client";
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useRouter } from 'next/navigation';
 
-interface Message { id: string; role: 'user' | 'assistant'; content: string; html?: string }
+interface Message { id: string; role: 'user' | 'assistant'; content: string; html?: string; markdown?: string }
 interface Article { title: string; link: string }
 
 export default function ChatPage() {
@@ -32,16 +34,16 @@ export default function ChatPage() {
     setLoading(true);
     try {
       const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: nextMessages.map(m => ({ role: m.role, content: m.content })) }) });
-      const data: { reply?: string; error?: string; articles?: Article[]; mode?: string; usedArticles?: Article[]; html?: string } = await res.json();
+      const data: { reply?: string; error?: string; articles?: Article[]; mode?: string; usedArticles?: Article[]; html?: string; markdown?: string } = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setMode(data.mode || null);
       if (data.mode === 'articles_only') {
         setArticles(data.articles || null);
         setUsedArticles(null);
       } else if (data.mode === 'fused_articles') {
-        // Render fused HTML (Introduction, Résultats, Conclusion) with images
-        const replyHtml: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', html: data.html || '' };
-        setMessages(m => [...m, replyHtml]);
+        // Render fused Markdown (Introduction, Résultats, Conclusion) with images
+        const replyMd: Message = { id: crypto.randomUUID(), role: 'assistant', content: '', markdown: data.markdown || '' };
+        setMessages(m => [...m, replyMd]);
         setArticles(data.articles || null);
         setUsedArticles(data.articles || null);
       } else if (data.mode === 'scraped') {
@@ -89,7 +91,28 @@ export default function ChatPage() {
         <div className="space-y-4 pb-40">
           {messages.map(m => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              {m.html ? (
+              {m.markdown ? (
+                <div className={`rounded-2xl px-4 py-3 max-w-[90%] text-sm shadow-sm bg-neutral-900/70 text-neutral-100 border border-neutral-700`}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ ...props }) => <a {...props} target="_blank" rel="noopener" className="text-blue-400 hover:underline" />,
+                      img: ({ ...props }) => <img {...props} style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '0.25rem 0' }} />,
+                      h1: ({ ...props }) => <h1 {...props} className="text-xl font-semibold mt-2 mb-2" />,
+                      h2: ({ ...props }) => <h2 {...props} className="text-lg font-semibold mt-2 mb-2" />,
+                      h3: ({ ...props }) => <h3 {...props} className="text-base font-semibold mt-2 mb-2" />,
+                      p: ({ ...props }) => <p {...props} className="leading-relaxed" />,
+                      ul: ({ ...props }) => <ul {...props} className="list-disc list-inside space-y-1" />,
+                      ol: ({ ...props }) => <ol {...props} className="list-decimal list-inside space-y-1" />,
+                      blockquote: ({ ...props }) => <blockquote {...props} className="border-l-2 border-neutral-600 pl-3 italic" />,
+                      table: ({ ...props }) => <table {...props} className="min-w-full border border-neutral-700 text-xs" />,
+                      th: ({ ...props }) => <th {...props} className="border border-neutral-700 px-2 py-1" />,
+                      td: ({ ...props }) => <td {...props} className="border border-neutral-700 px-2 py-1" />,
+                    }}
+                  >
+                    {m.markdown}
+                  </ReactMarkdown>
+                </div>
+              ) : m.html ? (
                 <div
                   className={`rounded-2xl px-4 py-3 max-w-[90%] text-sm shadow-sm bg-neutral-900/70 text-neutral-100 border border-neutral-700`}
                 >

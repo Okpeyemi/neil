@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     const primaryModel = process.env.OPENROUTER_MODEL_PRIMARY || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
     const summaryModel = process.env.OPENROUTER_MODEL_SUMMARY || primaryModel;
-    const fusionModel = process.env.OPENROUTER_MODEL_FUSION || 'gpt-oss-20b';
+    const fusionModel = process.env.OPENROUTER_MODEL_FUSION;
     const maxArticles = parseInt(process.env.SPACE_BIO_MAX_ARTICLES || '20', 10);
     const fuseArticlesMax = parseInt(process.env.SPACE_BIO_FUSE_MAX || '8', 10);
     if (!apiKey) {
@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
             }))
           };
 
-          const fusionPrompt = `You are a scientific writer. Create a concise, well-structured HTML answer with exactly three sections: <h2>Introduction</h2>, <h2>Résultats</h2>, <h2>Conclusion</h2>. Use only the provided documents and images. Guidelines:\n- Write in the user's language; if unsure, prefer French.\n- Cite sources inline as [n] matching the sources list.\n- In each section, you may include up to 3 relevant <figure> blocks, using provided image URLs only.\n- Each figure must be: <figure><img src=... alt=... /><figcaption>short caption + [n]</figcaption></figure>.\n- Avoid decorative logos or UI images.\n- Return ONLY valid HTML (no markdown).\n\nProvide at the end a <h3>Sources</h3> list linking to each source as [n] Title.`;
+          const fusionPrompt = `You are a scientific writer. Create a concise, well-structured GitHub-Flavored Markdown (GFM) answer with exactly three sections: \n\n## Introduction\n## Résultats\n## Conclusion\n\nRules:\n- Write in the user's language; if unsure, prefer French.\n- Use only the provided documents and images.\n- Cite sources inline as [n] matching the sources list.\n- You may include up to 3 relevant images per section using standard Markdown syntax: ![alt text](URL). Place a short italic caption on the next line including the citation, e.g. _Caption... [n]_.\n- Avoid decorative logos or UI images.\n- Return ONLY valid Markdown (no HTML).\n\nAt the end, add:\n\n### Sources\nList each source as [n] [Title](URL).`;
 
           const fusionResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
             const fusedHtml = fusionData.choices?.[0]?.message?.content || '';
             if (fusedHtml && fusedHtml.trim()) {
               return new Response(
-                JSON.stringify({ mode: 'fused_articles', html: fusedHtml, articles: fuseTargets }),
+                JSON.stringify({ mode: 'fused_articles', markdown: fusedHtml, articles: fuseTargets }),
                 { headers: { 'Content-Type': 'application/json' } }
               );
             }
