@@ -202,6 +202,10 @@ export default function Home() {
 
   {/* Headline */}
   <div className="text-center text-white drop-shadow-md">
+    <h1 className="text-4xl md:text-8xl font-semibold">AVATAR</h1>
+  </div>
+
+  <div className="text-center text-white drop-shadow-md">
     <h1 className="text-4xl md:text-5xl font-semibold">Hey, You.</h1>
     <p className="mt-2 text-base md:text-lg text-white/80">Ready to dive into the fascinating research of NASA?</p>
   </div>
