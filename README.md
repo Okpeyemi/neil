@@ -4,6 +4,8 @@ This project aims to build a Retrieval-Augmented Generation (RAG) chatbot over N
 
 Current status: Phase 1 (Scraping + Basic Chat UI + API stubs)
 
+Demo: https://neil-eight.vercel.app/
+
 ---
 ## Roadmap (Phases)
 1. Phase 1 (DONE):
