@@ -1,10 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import csv from 'csv-parser';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 interface CsvRow { Title: string; Link: string }
+
+const GITHUB_CSV_URL = process.env.SUGGESTIONS_CSV_URL
+  || 'https://raw.githubusercontent.com/jgalazka/SB_publications/main/SB_publication_PMC.csv';
 
 function pickRandom<T>(arr: T[], n: number): T[] {
   const copy = arr.slice();
@@ -15,29 +18,90 @@ function pickRandom<T>(arr: T[], n: number): T[] {
   return copy.slice(0, n);
 }
 
-function readCsv(file: string): Promise<CsvRow[]> {
-  return new Promise((resolve, reject) => {
-    const rows: CsvRow[] = [];
-    if (!fs.existsSync(file)) return resolve(rows);
-    fs.createReadStream(file)
-      .pipe(csv())
-      .on('data', (data: Record<string, unknown>) => {
-        const Title = String(data['Title'] ?? '').trim();
-        const Link = String(data['Link'] ?? '').trim();
-        if (Title && Link) rows.push({ Title, Link });
-      })
-      .on('end', () => resolve(rows))
-      .on('error', reject);
-  });
+// Parsing minimal: gère titres potentiellement entre guillemets, ignore lignes invalides
+function parseCsv(text: string): CsvRow[] {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (!lines.length) return [];
+  // supprimer header s'il contient Title,Link
+  if (/title\s*,\s*link/i.test(lines[0])) lines.shift();
+  const rows: CsvRow[] = [];
+  for (const l of lines) {
+    // Cas: "Titre, avec virgule",https://...
+    const mQuoted = l.match(/^"(.*)",(https?:\/\/.+)$/);
+    if (mQuoted) {
+      const Title = mQuoted[1].trim();
+      const Link = mQuoted[2].trim();
+      if (Title && Link) rows.push({ Title, Link });
+      continue;
+    }
+    const mPlain = l.match(/^(.*?),(https?:\/\/.+)$/);
+    if (mPlain) {
+      const Title = mPlain[1].replace(/^"|"$/g, '').trim();
+      const Link = mPlain[2].trim();
+      if (Title && Link) rows.push({ Title, Link });
+    }
+  }
+  return rows;
+}
+
+async function fetchGithubCsv(): Promise<CsvRow[]> {
+  try {
+    const res = await fetch(GITHUB_CSV_URL, { cache: 'no-store' });
+    if (!res.ok) {
+      console.warn('[suggestions] Échec fetch GitHub:', res.status, res.statusText);
+      return [];
+    }
+    const text = await res.text();
+    return parseCsv(text);
+  } catch (e: unknown) {
+    console.warn('[suggestions] Exception fetch GitHub:', (e as Error).message);
+    return [];
+  }
+}
+
+function readLocalCsvIfExists(): CsvRow[] {
+  const localPath = path.join(process.cwd(), 'public', 'SB_publication_PMC.csv');
+  if (!fs.existsSync(localPath)) return [];
+  try {
+    const text = fs.readFileSync(localPath, 'utf8');
+    return parseCsv(text);
+  } catch {
+    return [];
+  }
 }
 
 export async function GET() {
   try {
-    const csvPath = path.join(process.cwd(), 'public', 'SB_publication_PMC.csv');
-    const rows = await readCsv(csvPath);
-    const picks = pickRandom(rows, 3).map(r => ({ title: r.Title, link: r.Link }));
-    return new Response(JSON.stringify({ suggestions: picks }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  } catch (_e: unknown) {
-    return new Response(JSON.stringify({ suggestions: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    console.debug('[suggestions] Chargement CSV GitHub:', GITHUB_CSV_URL);
+    let rows = await fetchGithubCsv();
+
+    if (!rows.length) {
+      console.debug('[suggestions] Fallback lecture locale');
+      rows = readLocalCsvIfExists();
+    }
+
+    if (!rows.length) {
+      return new Response(JSON.stringify({ suggestions: [], error: 'CSV introuvable ou vide (GitHub + local)' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const picks = pickRandom(rows, Math.min(3, rows.length))
+      .map(r => ({ title: r.Title, link: r.Link }));
+
+    return new Response(JSON.stringify({ suggestions: picks }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (e: unknown) {
+    console.error('[suggestions] Erreur générale:', (e as Error).message);
+    return new Response(JSON.stringify({ suggestions: [], error: (e as Error).message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }

@@ -135,12 +135,6 @@ Context:
 Question: {{USER_QUESTION}}
 Answer in French, concise, with bullet points when listing.
 ```
-
----
-## Deployment (Future)
-* Vercel: add required env vars (OpenRouter, Pinecone) in dashboard
-* Prevent running heavy scraper on serverless automatically – keep as manual script
-
 ---
 ## Notes & Compliance
 * Scraper is polite: delay + custom UA
@@ -154,3 +148,79 @@ See roadmap phases above. Immediate next: implement embeddings + Pinecone integr
 ---
 ## License
 MIT (add LICENSE file if distribution required)
+
+## AI Usage & Methodology
+
+This project is explicitly designed as an AI-assisted Retrieval-Augmented Generation (RAG) pipeline for space / NASA biology literature. Below is a transparent summary of how AI is (and will be) used.
+
+### Current / Implemented
+1. Assisted Development:
+   - Code scaffolding (API routes, scraper structure, utility patterns)
+   - Refactoring for streaming, dynamic route caching, error paths
+   - Prompt template drafting (context‑first, citation emphasis)
+2. Content Processing (Planned in Phase 2–3 but structurally prepared):
+   - Text chunking by semantic section
+   - Embedding generation (HuggingFace sentence-transformers model)
+3. Retrieval Layer (Planned):
+   - Vector similarity (Pinecone) → top‑k context assembly
+4. Response Generation:
+   - LLM (OpenRouter model gpt-oss-20b) constrained to supplied context
+   - Citation packaging (title + section heading)
+5. Guardrails (Initial Draft):
+   - Refuse unsupported questions (out of scope / no context)
+   - Encourage provenance (source list always returned)
+
+### Primary User Use Cases
+1. Rapid literature triage for spaceflight biology (bone loss, immune modulation, radiation response)
+2. Cross-paper thematic linking (e.g., oxidative stress ↔ muscle atrophy ↔ microgravity models)
+3. Hypothesis drafting (e.g., candidate pathways for countermeasures)
+4. Educational Q/A (French / English concise summaries)
+5. Countermeasure research support (identify recurring molecular targets)
+6. Experimental design inspiration (highlight model organisms & assays)
+7. Gap spotting (flag topics with sparse contextual matches → triggers web fallback)
+8. Metadata enrichment (planned: entity tagging for pathways, genes, stressors)
+
+### Planned AI Enhancements
+| Area | Enhancement |
+|------|-------------|
+| Embeddings | Multi-model embedding ensemble (bio + general) for robustness |
+| Retrieval | Hybrid (BM25 + vectors) + query classification (factual vs exploratory) |
+| Post-processing | Answer confidence scoring (similarity dispersion + coverage ratio) |
+| Evaluation | Precision@k, Coverage@k, Hallucination audit set |
+| Summarization | Batch abstractive summaries per article / section |
+| Entity Layer | Gene/protein / pathway tagging (BioNER) for structured filters |
+| Caching | Deterministic cache key (hash(question) + top doc ids) to reduce cost |
+| Web Fallback | Merge external snippets with explicit separation + lower weight |
+| Safety | Simple rule filter for speculative biomedical claims without citation |
+
+### Prompt Strategy (Draft Evolution)
+1. System: scope limitation (PMC NASA / space biology)
+2. Context blocks: sorted by descending similarity; truncated to token budget
+3. Citation formatting: [Section Title | Article Title | URL]
+4. Refusal policy: if no block above threshold (e.g. 0.68 cosine), return “insufficient internal context” (then web search Phase 4)
+5. Style: concise, structured bullets for mechanistic / molecular queries
+
+### Data & Compliance Notes
+- Only open-access PubMed Central pages parsed.
+- No model fine-tuning on proprietary sources.
+- Embeddings store text fragments + minimal metadata (id, title, url, section).
+- Removal / re-scrape pipeline possible (idempotent by article id).
+
+### How AI Assisted This Repository (Meta)
+| Task | AI Contribution | Human Oversight |
+|------|-----------------|-----------------|
+| Scraper architecture | Suggested modular retries + delay params | Adjusted selectors & pacing |
+| Error handling | Proposed fallback strategies | Validated edge cases |
+| README structuring | Generated initial outline | Curated, pruned scope claims |
+| Prompt template | Draft system & context pattern | Refined citation format |
+| Refactors | Simplified CSV ingestion path | Confirmed runtime constraints |
+
+### Limitations
+- No factual guarantee without proper evaluation suite yet.
+- Embedding-based recall may miss niche mechanistic details (will improve with hybrid retrieval).
+- Web fallback not active until Phase 4 → currently limited to local corpus.
+
+### Opt-Out & Traceability (Planned)
+- Per-article exclusion list
+- Retrieval debug mode (`/api/chat?debug=1`) returning raw similarity scores
+

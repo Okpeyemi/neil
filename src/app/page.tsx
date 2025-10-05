@@ -137,14 +137,13 @@ export default function Home() {
     const current = modes.find((m) => m.value === mode)!;
     return (
       <div className="relative">
-        <h1>Neil AI</h1>
+        <h1 className="text-xl font-black mb-2">Neil AI</h1>
         <button
           onClick={() => setModeOpen((v) => !v)}
           className="flex items-center gap-2 bg-black/50 backdrop-blur text-white text-sm px-3 py-2 rounded border border-white/20 shadow"
         >
           <span>{current.icon}</span>
           <span className="font-medium">{current.label}</span>
-          <span className="text-white/60 hidden md:inline">· {current.desc}</span>
           <span className="ml-1">▾</span>
         </button>
         {modeOpen && (
@@ -191,11 +190,17 @@ export default function Home() {
         href={s.link}
         target="_blank"
         rel="noreferrer"
-        className="group flex items-center gap-2 px-3 py-2 rounded-full bg-black/40 text-white border border-white/10 hover:border-white/30 shadow-sm"
+        className="group relative flex items-center gap-2 px-3 py-2 rounded-full bg-black/40 text-white border border-white/10 hover:border-white/30 shadow-sm"
         title={s.title}
       >
         <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
         <span className="truncate max-w-[220px] text-sm">{s.title}</span>
+
+        {/* Hover preview tooltip */}
+        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 bg-black/80 text-white text-xs rounded p-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="font-medium mb-1 truncate">{s.title}</div>
+          <div className="text-[11px] text-white/70 truncate">{s.link}</div>
+        </div>
       </a>
     ))}
   </div>
