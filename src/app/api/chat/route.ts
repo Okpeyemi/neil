@@ -122,6 +122,27 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function proxyUrl(u: string): string {
+  try {
+    if (!u) return u;
+    if (u.startsWith('/api/image?url=')) return u;
+    if (/^data:/i.test(u)) return u;
+    const enc = encodeURIComponent(u);
+    return `/api/image?url=${enc}`;
+  } catch { return u; }
+}
+
+function proxyHtmlImages(html: string): string {
+  if (!html) return html;
+  return html.replace(/<img([^>]*?)src=(['"])(.*?)(\2)([^>]*?)>/gi, (m, pre, q, src, _q2, post) => {
+    try {
+      if (!src || src.startsWith('/api/image?url=') || /^data:/i.test(src)) return m;
+      const prox = proxyUrl(src);
+      return `<img${pre}src=${q}${prox}${q}${post}>`;
+    } catch { return m; }
+  });
+}
+
 // Helpers to robustly parse model-returned JSON
 function extractJsonCandidate(s: string): string {
   // Prefer fenced ```json blocks if present
@@ -291,7 +312,7 @@ export async function POST(req: NextRequest) {
                   // Keep only with overlap > 0; if none, keep at most first 1
                   let filtered = withScores.filter(x => x.overlap > 0).sort((a,b) => b.overlap - a.overlap).slice(0,3);
                   if (filtered.length === 0 && withScores.length) filtered = withScores.slice(0,1);
-                  const images = filtered.map(f => f.data);
+                  const images = filtered.map(f => ({ ...f.data, src: proxyUrl(f.data.src) }));
                   console.log('FUSION_FILTER', { heading: sec.heading, total: (sec.imageRefs||[]).length, kept: images.length });
                   return { heading: sec.heading || '', markdown: sec.text_markdown || '', images };
                 });
@@ -319,7 +340,7 @@ export async function POST(req: NextRequest) {
             const combinedHtml = sections.map(({ article, html }, idx) => (
               `<section class="scraped-article" style="margin:1rem 0;padding:0.5rem 0;border-top:1px solid rgba(255,255,255,0.08)">`+
               `<h2 style="font-size:1rem;font-weight:600;margin-bottom:0.5rem">[${idx+1}] ${article.title} — <a href="${article.link}" target="_blank" rel="noopener nofollow noreferrer" style="color:#60a5fa;text-decoration:underline">source</a></h2>`+
-              html+
+              proxyHtmlImages(html)+
               `</section>`
             )).join('\n');
             return new Response(JSON.stringify({ mode: 'scraped', reply: '', html: combinedHtml, articles: sections.map(s => s.article) }), { headers: { 'Content-Type': 'application/json' } });
@@ -333,7 +354,7 @@ export async function POST(req: NextRequest) {
               const figs = (s.images || []).slice(0, 8).map(img => {
                 const alt = img.alt ? escapeHtml(img.alt) : '';
                 const cap = img.caption ? `<figcaption style=\"font-size:0.8em;opacity:0.8\">${escapeHtml(img.caption)}</figcaption>` : '';
-                return `<figure style=\"margin:0.75rem 0\"><img src=\"${img.src}\" alt=\"${alt}\" style=\"max-width:100%;height:auto;display:block;margin:0.25rem 0\"/>${cap}</figure>`;
+                return `<figure style=\"margin:0.75rem 0\"><img src=\"${proxyUrl(img.src)}\" alt=\"${alt}\" style=\"max-width:100%;height:auto;display:block;margin:0.25rem 0\"/>${cap}</figure>`;
               }).join('\n');
               const body = [paras, figs].filter(Boolean).join('\n');
               if (!body.trim()) return '';

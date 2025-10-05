@@ -432,6 +432,16 @@ export default function ChatPage() {
                         img: ({ ...props }) => (
                           <img
                             {...props}
+                            onError={(e) => {
+                              try {
+                                const el = e.currentTarget as HTMLImageElement;
+                                const tried = (el as any).dataset?.triedProxy === '1';
+                                if (!tried && el.src && !el.src.startsWith('/api/image?url=') && !el.src.startsWith('data:')) {
+                                  (el as any).dataset = { ...(el as any).dataset, triedProxy: '1' };
+                                  el.src = `/api/image?url=${encodeURIComponent(el.src)}`;
+                                }
+                              } catch { /* ignore */ }
+                            }}
                             style={{
                               maxWidth: "100%",
                               height: "auto",
