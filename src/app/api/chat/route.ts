@@ -152,7 +152,7 @@ function proxyHtmlImages(html: string): string {
   });
 }
 
-// Helpers to robustly parse model-returned JSON
+// Helpers to robustly parse model-returned JSON 
 function extractJsonCandidate(s: string): string {
   // Prefer fenced ```json blocks if present
   const fencedJson = s.match(/```\s*json\s*([\s\S]*?)```/i);
