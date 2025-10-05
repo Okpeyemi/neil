@@ -6,6 +6,8 @@ interface ChatRequestBody {
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
   // When true, server will attempt to scrape & summarize related articles instead of just returning list
   summarize?: boolean;
+  // Optional audience mode to tailor responses
+  mode?: 'decouverte' | 'scientifiques' | 'investisseurs' | 'architects';
 }
 
 interface OpenRouterChoiceMessage { role: string; content: string }
@@ -170,6 +172,19 @@ function normalizeBackslashesForJson(s: string): string {
   return s.replace(/\\(?!["\\\/bfnrtu])/g, '\\\\');
 }
 
+function modeSystemGuidance(mode?: 'decouverte' | 'scientifiques' | 'investisseurs' | 'architects'): string {
+  switch (mode) {
+    case 'scientifiques':
+      return 'Audience: scientific. Use precise, rigorous language. Emphasize methods, quantitative results, uncertainties, and cite sources using [n]. Include concise explanations but avoid hype.';
+    case 'investisseurs':
+      return 'Audience: investors. Focus on market impact, TAM/SAM/SOM when relevant, ROI, risks, timelines, milestones, team and moat. Be concise, clear, and outcome-oriented.';
+    case 'architects':
+      return 'Audience: software/solution architects. Provide high-level architecture, components, integration points, data flows, performance considerations, SLAs, trade-offs, risks, and step-by-step implementation plan.';
+    default:
+      return 'Audience: general discovery. Keep explanations balanced, accessible, and actionable.';
+  }
+}
+
 // Modify POST handler to incorporate summarize branch
 export async function POST(req: NextRequest) {
   try {
@@ -195,6 +210,8 @@ export async function POST(req: NextRequest) {
 
     let relatedArticles: Article[] = [];
     const augmentedMessages = body.messages.map(m => ({ role: m.role, content: m.content }));
+    const userMode = body.mode;
+    const modeSystem = modeSystemGuidance(userMode);
     const wantsSummary = !!body.summarize;
 
     // Intent routing
@@ -260,7 +277,7 @@ export async function POST(req: NextRequest) {
           console.log('FUSION_DOCS', docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url, textLen: d.text.length, imageCount: d.images.length })));
 
           if (fusionModel) {
-            const fusionPrompt = `Return ONLY strict JSON (UTF-8, no markdown, no code fences) with this schema:\n{\n  "language": "fr",\n  "sections": [\n    {"heading": "Introduction", "text_markdown": "...", "imageRefs": [{"doc": 1, "img": 0, "caption": "...", "citeIndex": 1}]},\n    {"heading": "Résultats", "text_markdown": "...", "imageRefs": []},\n    {"heading": "Conclusion", "text_markdown": "...", "imageRefs": []}\n  ]\n}\nGuidelines:\n- Write in the user's language; if unsure, prefer French.\n- Use the user's query for context and produce explicit, precise text (avoid generic filler).\n- Use only the provided documents and images by their indices.\n- For each section, include 0–3 imageRefs that DIRECTLY support the claims in that section; prefer figures whose captions/keywords match the text.\n- Add inline citations [n] in text_markdown when referencing specific claims.\n- In captions, append the citation [n] where n is the source index.\n- Never invent images or URLs; reference images only by {doc, img}.\n- text_markdown must be GitHub-Flavored Markdown (GFM).\n- Do NOT wrap the output in code fences.\n- Avoid stray backslashes; only valid JSON escape sequences (\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\u) are permitted.\n- Use Markdown tables when helpful to compare findings/methods. If a simple graph would help, include a concise ASCII sketch or describe it in text.`;
+            const fusionPrompt = `Return ONLY strict JSON (UTF-8, no markdown, no code fences) with this schema:\n{\n  "language": "fr",\n  "sections": [\n    {"heading": "Introduction", "text_markdown": "...", "imageRefs": [{"doc": 1, "img": 0, "caption": "...", "citeIndex": 1}]},\n    {"heading": "Résultats", "text_markdown": "...", "imageRefs": []},\n    {"heading": "Conclusion", "text_markdown": "...", "imageRefs": []}\n  ]\n}\nGuidelines:\n- Write in the user's language; if unsure, prefer French.\n- Use the user's query for context and produce explicit, precise text (avoid generic filler).\n- Use only the provided documents and images by their indices.\n- For each section, include 0–3 imageRefs that DIRECTLY support the claims in that section; prefer figures whose captions/keywords match the text.\n- Add inline citations [n] in text_markdown when referencing specific claims.\n- In captions, append the citation [n] where n is the source index.\n- Never invent images or URLs; reference images only by {doc, img}.\n- text_markdown must be GitHub-Flavored Markdown (GFM).\n- Do NOT wrap the output in code fences.\n- Avoid stray backslashes; only valid JSON escape sequences (\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\u) are permitted.\n- Use Markdown tables when helpful to compare findings/methods. If a simple graph would help, include a concise ASCII sketch or describe it in text.\n- Audience mode: ${modeSystem}`;
 
             const fusionResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -275,6 +292,7 @@ export async function POST(req: NextRequest) {
                 temperature: 0.2,
                 messages: [
                   { role: 'system', content: 'You merge multiple scientific documents into a single structured answer. Follow the JSON schema exactly.' },
+                  { role: 'system', content: modeSystem },
                   { role: 'user', content: fusionPrompt },
                   { role: 'user', content: JSON.stringify({ queryOriginal: userText, queryEnglish: englishQuery, sources: docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url })), documents: docsForPrompt }).slice(0, 60000) }
                 ],
@@ -405,6 +423,7 @@ export async function POST(req: NextRequest) {
           model: summaryModel,
           messages: [
             { role: 'system', content: 'You create concise, structured scientific syntheses.' },
+            { role: 'system', content: modeSystem },
             { role: 'user', content: summaryPrompt }
           ],
           temperature: 0.4,
@@ -433,7 +452,10 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: primaryModel,
-        messages: augmentedMessages,
+        messages: [
+          { role: 'system', content: modeSystem },
+          ...augmentedMessages,
+        ],
         temperature: 0.7,
       }),
     });

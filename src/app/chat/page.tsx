@@ -16,6 +16,8 @@ interface Article {
   link: string;
 }
 
+type UserMode = "Découverte" | "Scientifiques" | "Investisseurs" | "Architects";
+
 // Minimal types for Web Speech API to avoid explicit any
 type MinimalResultItem = { 0: { transcript: string }; isFinal: boolean };
 type MinimalRecognitionEvent = { resultIndex: number; results: MinimalResultItem[] };
@@ -129,6 +131,68 @@ export default function ChatPage() {
   // Ref pour maintenir l'état le plus récent des messages (évite tout décalage d'ordre)
   const messagesRef = useRef<Message[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; alt?: string } | null>(null);
+  const [userMode, setUserMode] = useState<UserMode>("Découverte");
+
+  const MODE_OPTIONS: { label: UserMode; key: UserMode; icon: React.ReactNode; desc: string }[] = [
+    {
+      label: "Découverte",
+      key: "Découverte",
+      icon: (
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M16 8l-4 8-4-4 8-4z" />
+        </svg>
+      ),
+      desc: "Réponse générale et équilibrée",
+    },
+    {
+      label: "Scientifiques",
+      key: "Scientifiques",
+      icon: (
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2h12" />
+          <path d="M9 2v6l-5 9a4 4 0 0 0 3.5 6h9A4 4 0 0 0 20 17l-5-9V2" />
+        </svg>
+      ),
+      desc: "Focalisée méthodes, données, citations",
+    },
+    {
+      label: "Investisseurs",
+      key: "Investisseurs",
+      icon: (
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3v18h18" />
+          <path d="M7 15l4-4 3 3 4-6" />
+        </svg>
+      ),
+      desc: "Marché, ROI, risques, feuille de route",
+    },
+    {
+      label: "Architects",
+      key: "Architects",
+      icon: (
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="12" rx="2" />
+          <path d="M7 21h10" />
+          <path d="M12 15v6" />
+        </svg>
+      ),
+      desc: "Architecture, intégration, contraintes",
+    },
+  ];
+
+  function toServerMode(m: UserMode): "decouverte" | "scientifiques" | "investisseurs" | "architects" {
+    switch (m) {
+      case "Scientifiques":
+        return "scientifiques";
+      case "Investisseurs":
+        return "investisseurs";
+      case "Architects":
+        return "architects";
+      default:
+        return "decouverte";
+    }
+  }
 
   useEffect(() => {
     if (listRef.current) {
@@ -136,6 +200,29 @@ export default function ChatPage() {
     }
     messagesRef.current = messages; // synchronise la ref
   }, [messages, articles, usedArticles]);
+
+  // Load saved mode from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem("neil:userMode");
+      if (saved === "Découverte" || saved === "Scientifiques" || saved === "Investisseurs" || saved === "Architects") {
+        setUserMode(saved as UserMode);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Persist mode on change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("neil:userMode", userMode);
+    } catch {
+      // ignore
+    }
+  }, [userMode]);
 
   // Initialiser la reconnaissance vocale si dispo
   useEffect(() => {
@@ -225,7 +312,7 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: payloadMessages }),
+        body: JSON.stringify({ messages: payloadMessages, mode: toServerMode(userMode) }),
       });
       const data: {
         reply?: string;
@@ -424,6 +511,53 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen w-full bg-[url('/space-background.jpg')] bg-cover bg-center bg-fixed">
       <div className="flex flex-col items-center justify-center h-screen w-full mx-auto bg-black/60 backdrop-blur-sm sm:px-4 py-4">
+        {/* Mode selector (shadcn-style) */}
+        <div className="w-full max-w-4xl px-4 mb-2">
+          <div className="relative inline-block text-left">
+            <div className="group">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900/80 px-3 py-2 text-sm text-neutral-200 shadow-sm hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                onClick={(e) => {
+                  const el = (e.currentTarget.nextSibling as HTMLElement) || null;
+                  if (el) el.classList.toggle("hidden");
+                }}
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                {MODE_OPTIONS.find((o) => o.key === userMode)?.icon}
+                <span>{userMode}</span>
+                <svg viewBox="0 0 24 24" className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              <div className="absolute left-0 mt-1 min-w-[220px] rounded-lg border border-neutral-700 bg-neutral-900/95 shadow-xl hidden z-20">
+                <ul role="listbox" className="max-h-80 overflow-auto py-1">
+                  {MODE_OPTIONS.map((opt) => (
+                    <li
+                      key={opt.key}
+                      role="option"
+                      aria-selected={userMode === opt.key}
+                      onClick={(e) => {
+                        setUserMode(opt.key);
+                        // close dropdown
+                        const parent = (e.currentTarget.parentElement?.parentElement) as HTMLElement | null;
+                        parent?.classList.add("hidden");
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-800 ${userMode === opt.key ? "bg-neutral-800" : ""}`}
+                    >
+                      <span className="text-neutral-200">{opt.icon}</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm text-neutral-100">{opt.label}</span>
+                        <span className="text-[11px] text-neutral-400">{opt.desc}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
         <div
           className="flex-1 px-4 w-full max-w-4xl overflow-auto scroll-hide"
           ref={listRef}
