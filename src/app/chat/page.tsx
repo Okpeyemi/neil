@@ -132,6 +132,8 @@ export default function ChatPage() {
   const messagesRef = useRef<Message[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; alt?: string } | null>(null);
   const [userMode, setUserMode] = useState<UserMode>("Découverte");
+  const [randomArticles, setRandomArticles] = useState<Article[] | null>(null);
+  const [randomLoading, setRandomLoading] = useState<boolean>(false);
 
   const MODE_OPTIONS: { label: UserMode; key: UserMode; icon: React.ReactNode; desc: string }[] = [
     {
@@ -193,6 +195,57 @@ export default function ChatPage() {
         return "decouverte";
     }
   }
+
+  // --- Pre-input random articles (client-side fetch) ---
+  function parseCsvClient(csv: string): Article[] {
+    const lines = csv.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const titleIdx = header.findIndex((h) => h.startsWith('title'));
+    const linkIdx = header.findIndex((h) => h === 'link' || h === 'url');
+    if (titleIdx === -1 || linkIdx === -1) return [];
+    const out: Article[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols.length <= Math.max(titleIdx, linkIdx)) continue;
+      const title = cols[titleIdx].trim();
+      const link = cols[linkIdx].trim();
+      if (title && link && /^https?:\/\//i.test(link)) out.push({ title, link });
+    }
+    return out;
+  }
+
+  function pickRandom<T>(arr: T[], n: number): T[] {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, n);
+  }
+
+  useEffect(() => {
+    let canceled = false;
+    async function load() {
+      try {
+        setRandomLoading(true);
+        const CSV_URL = 'https://raw.githubusercontent.com/jgalazka/SB_publications/refs/heads/main/SB_publication_PMC.csv';
+        const res = await fetch(CSV_URL, { cache: 'no-store' });
+        if (!res.ok) return;
+        const text = await res.text();
+        const arts = parseCsvClient(text);
+        const selected = pickRandom(arts, 3);
+        if (!canceled) setRandomArticles(selected);
+      } catch {
+        // ignore
+      } finally {
+        if (!canceled) setRandomLoading(false);
+      }
+    }
+    load();
+    return () => { canceled = true; };
+  }, []);
+  // --- End pre-input random articles ---
 
   useEffect(() => {
     if (listRef.current) {
@@ -564,13 +617,59 @@ export default function ChatPage() {
         >
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center text-neutral-300/80 select-none gap-6">
+            {/* Random articles previews above the input */}
+            {(randomLoading || (randomArticles && randomArticles.length > 0)) && (
+              <div className="w-full max-w-3xl mx-auto">
+                <h3 className="text-sm font-bold text-neutral-200 mb-2">Articles de la NASA</h3>
+                {randomLoading && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="h-20 rounded-xl bg-neutral-900/60 border border-neutral-800 animate-pulse" />
+                    ))}
+                  </div>
+                )}
+                {randomArticles && randomArticles.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    {randomArticles.map((a, idx) => {
+                      let hostname = '';
+                      try { hostname = new URL(a.link).hostname; } catch {}
+                      const icon = hostname ? `https://icons.duckduckgo.com/ip3/${hostname}.ico` : '';
+                      return (
+                        <a
+                          key={idx}
+                          href={a.link}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          className="group flex gap-3 items-start p-3 rounded-xl bg-neutral-900/80 border border-neutral-700 hover:border-neutral-500 hover:bg-neutral-900 transition text-left"
+                        >
+                          {icon ? (
+                            <img src={icon} alt="" className="w-5 h-5 mt-0.5 rounded-sm opacity-80" />
+                          ) : (
+                            <div className="w-5 h-5 mt-0.5 rounded-sm bg-neutral-700" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-neutral-100 text-sm font-medium truncate">{a.title}</div>
+                            {hostname && (
+                              <div className="text-[11px] text-neutral-400 truncate">{hostname}</div>
+                            )}
+                          </div>
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-80 transition" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M7 17l9-9" />
+                            <path d="M7 7h9v9" />
+                          </svg>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
               <div>
-                <h1 className="text-2xl font-medium mb-4 drop-shadow">
-                  Hey, Maqsoud. Ready to dive in?
+                <h1 className="text-5xl font-black mb-4 drop-shadow">
+                  Hey, Maqsoud.
                 </h1>
-                <p className="text-xs opacity-70 mx-auto">
-                  Pose une question dans n&apos;importe quelle langue. / Ask in
-                  any language.
+                <p className="text-2xl font-medium mb-4 drop-shadow">
+                  Prêt à plonger dans les recherches fascinantes de la NASA?
                 </p>
               </div>
               {/* Centered input form before first message */}
