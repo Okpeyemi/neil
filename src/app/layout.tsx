@@ -8,9 +8,9 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Neil — Assistant IA",
-  description: "Neil, assistant IA à jour avec les dernières avancées de la NASA.",
-  keywords: ["Neil", "assistant IA", "NASA", "espace", "astronomie"],
+  title: "Neil – NASA Bioscience Intelligence Chat Interface",
+  description: "Neil, An AI-powered conversational interface to explore, query, and summarize NASA bioscience experiment publications",
+  keywords: ["Neil", "AI", "NASA", "bioscience", "experiment", "publications"],
 };
 
 export default function RootLayout({
