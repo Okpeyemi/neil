@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { parse } from 'node-html-parser'; // still used for CSV parsing (simple)
 import { batchScrape, batchScrapeHtml, Article, ScrapedArticle } from '@/lib/scrape';
 
 // Simple schema of request body
@@ -14,6 +13,14 @@ interface OpenRouterChoice { message?: OpenRouterChoiceMessage }
 interface OpenRouterResponse { choices?: OpenRouterChoice[] }
 
 // Article / Scraped types now imported
+// Fusion JSON types
+interface FusionImageRef { doc: number; img: number; caption?: string; citeIndex?: number }
+interface FusionSectionIn { heading?: string; text_markdown?: string; imageRefs?: FusionImageRef[] }
+interface FusionJson { language?: string; sections?: FusionSectionIn[] }
+interface ResolvedImage { src: string; alt: string; caption: string; citeIndex: number }
+interface ResolvedSection { heading: string; markdown: string; images: ResolvedImage[] }
+interface DocImage { idx: number; src: string; alt: string }
+interface DocForPrompt { idx: number; title: string; url: string; text: string; images: DocImage[] }
 
 export const runtime = 'edge'; // faster cold start, streaming possible later
 
@@ -188,7 +195,6 @@ export async function POST(req: NextRequest) {
 
     let relatedArticles: Article[] = [];
     const augmentedMessages = body.messages.map(m => ({ role: m.role, content: m.content }));
-    let articlesOnly = false;
     const wantsSummary = !!body.summarize;
 
     // Intent routing
@@ -244,7 +250,7 @@ export async function POST(req: NextRequest) {
           const fuseTargets = relatedArticles.slice(0, fuseArticlesMax);
           // Get text+images for fusion
           const scrapedForFusion = await batchScrape(fuseTargets);
-          const docsForPrompt = scrapedForFusion.map((s, i) => ({
+          const docsForPrompt: DocForPrompt[] = scrapedForFusion.map((s, i) => ({
             idx: i + 1,
             title: s.title,
             url: s.link,
@@ -281,10 +287,10 @@ export async function POST(req: NextRequest) {
               console.log('FUSION_RAW_SAMPLE', fusedRaw.slice(0, 500));
               try {
                 const candidate = extractJsonCandidate(fusedRaw);
-                let fusedObj: any = null;
+                let fusedObj: FusionJson | null = null;
                 try {
                   fusedObj = JSON.parse(candidate);
-                } catch (e1) {
+                } catch {
                   const normalized = normalizeBackslashesForJson(candidate);
                   console.log('FUSION_JSON_NORMALIZED_APPLIED');
                   try {
@@ -297,13 +303,13 @@ export async function POST(req: NextRequest) {
                   // Parsing failed; skip to fallback
                   throw new Error('fusion_json_unparsed');
                 }
-                const sectionsIn = Array.isArray(fusedObj.sections) ? fusedObj.sections : [];
+                const sectionsIn: FusionSectionIn[] = Array.isArray(fusedObj.sections) ? (fusedObj.sections as FusionSectionIn[]) : [];
                 function tok(s: string) { return (s || '').toLowerCase().split(/[^a-z0-9éèêàùçäëïöüâôî]+/).filter(Boolean); }
-                const resolved = sectionsIn.map((sec: any) => {
+                const resolved: ResolvedSection[] = sectionsIn.map((sec: FusionSectionIn) => {
                   const secTokens = new Set(tok(String(sec.text_markdown || '') + ' ' + englishQuery));
-                  const withScores = (sec.imageRefs || []).map((ref: any) => {
+                  const withScores = (sec.imageRefs || []).map((ref: FusionImageRef) => {
                     const d = docsForPrompt.find(dd => dd.idx === ref.doc);
-                    const im = d?.images?.find((ii: any) => ii.idx === ref.img);
+                    const im = d?.images?.find((ii) => ii.idx === ref.img);
                     if (!im) return null;
                     const imgTokens = new Set(tok((im.alt || '') + ' ' + (ref.caption || '') + ' ' + (d?.title || '')));
                     let overlap = 0; imgTokens.forEach(t => { if (secTokens.has(t)) overlap++; });
@@ -316,7 +322,7 @@ export async function POST(req: NextRequest) {
                   console.log('FUSION_FILTER', { heading: sec.heading, total: (sec.imageRefs||[]).length, kept: images.length });
                   return { heading: sec.heading || '', markdown: sec.text_markdown || '', images };
                 });
-                console.log('FUSION_RESOLVED', resolved.map((s: any) => ({ heading: s.heading, mdLen: (s.markdown||'').length, imgCount: s.images.length })));
+                console.log('FUSION_RESOLVED', resolved.map((s) => ({ heading: s.heading, mdLen: (s.markdown||'').length, imgCount: s.images.length })));
                 if (resolved.length) {
                   return new Response(
                     JSON.stringify({ mode: 'fused_json', fusion: { sections: resolved }, articles: fuseTargets }),

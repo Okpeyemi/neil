@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 interface Message {
   id: string;
@@ -16,42 +16,102 @@ interface Article {
   link: string;
 }
 
+// Minimal types for Web Speech API to avoid explicit any
+type MinimalResultItem = { 0: { transcript: string }; isFinal: boolean };
+type MinimalRecognitionEvent = { resultIndex: number; results: MinimalResultItem[] };
+interface MinimalSpeechRecognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start(): void;
+  stop(): void;
+  onresult: ((e: MinimalRecognitionEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+// Extract original source URL if proxied through /api/image?url=
+function extractOriginalSrc(s?: string): string {
+  if (!s) return "";
+  try {
+    if (s.startsWith("/api/image?url=")) {
+      const u = new URL(
+        s,
+        typeof window !== "undefined" ? window.location.origin : "http://localhost"
+      );
+      const orig = u.searchParams.get("url");
+      return orig ? decodeURIComponent(orig) : s;
+    }
+  } catch {
+    // ignore
+  }
+  return s;
+}
+
 // Inline image component with skeleton placeholder and proxy fallback
-const MarkdownImage: React.FC<React.ImgHTMLAttributes<HTMLImageElement>> = (props) => {
+const MarkdownImage: React.FC<{ src?: string; alt?: string; onOpenLightbox?: (src: string, alt?: string) => void } & Omit<React.ComponentProps<typeof Image>, "src" | "alt">> = (props) => {
   const [loaded, setLoaded] = useState(false);
+  const [src, setSrc] = useState<string>(props.src || "");
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    try {
+      const el = e.currentTarget;
+      if (el.naturalWidth && el.naturalHeight) {
+        setAspectRatio(el.naturalWidth / el.naturalHeight);
+      }
+    } catch {
+      // ignore
+    }
+    setLoaded(true);
+    if (props.onLoad) props.onLoad(e);
+  };
+  const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    try {
+      const el = e.currentTarget;
+      const tried = el.dataset?.triedProxy === "1";
+      const currentSrc = src || el.currentSrc || el.src;
+      if (!tried && currentSrc && !currentSrc.startsWith("/api/image?url=") && !currentSrc.startsWith("data:")) {
+        el.dataset.triedProxy = "1";
+        setSrc(`/api/image?url=${encodeURIComponent(currentSrc)}`);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    if (props.onError) props.onError(e);
+  };
   return (
-    <div className="relative w-full my-1">
+    <div className="relative w-full my-2">
       {!loaded && (
-        <div className="w-full h-40 max-h-[360px] bg-neutral-800/60 rounded-md animate-pulse" />
+        <div className="w-full h-60 max-h-[60vh] bg-neutral-800/60 rounded-md animate-pulse" />
       )}
-      <img
-        ref={imgRef}
-        {...props}
-        onLoad={(e) => {
-          setLoaded(true);
-          props.onLoad && props.onLoad(e);
-        }}
-        onError={(e) => {
-          try {
-            const el = e.currentTarget as HTMLImageElement;
-            const tried = (el as any).dataset?.triedProxy === '1';
-            if (!tried && el.src && !el.src.startsWith('/api/image?url=') && !el.src.startsWith('data:')) {
-              (el as any).dataset = { ...(el as any).dataset, triedProxy: '1' };
-              el.src = `/api/image?url=${encodeURIComponent(el.src)}`;
-            }
-          } catch { /* ignore */ }
-          props.onError && props.onError(e);
-        }}
-        style={{
-          maxWidth: '100%',
-          height: 'auto',
-          display: 'block',
-          margin: '0.25rem 0',
-          opacity: loaded ? 1 : 0,
-          transition: 'opacity 200ms ease',
-        }}
-      />
+      <div
+        className="relative w-full min-h-[260px] sm:min-h-[300px] md:min-h-[40vh] lg:min-h-[50vh] cursor-zoom-in"
+        style={{ aspectRatio: aspectRatio ?? 16/9, maxHeight: "90vh" }}
+        onClick={() => props.onOpenLightbox?.(extractOriginalSrc(src || props.src) || "", props.alt)}
+        role="button"
+        aria-label="Voir l'image en plein écran"
+      >
+        <Image
+          ref={imgRef}
+          src={src || ""}
+          alt={props.alt || ""}
+          fill
+          sizes="(max-width: 768px) 100vw, 85vw"
+          onLoad={handleLoad}
+          onError={handleError}
+          style={{
+            objectFit: "contain",
+            objectPosition: "center",
+            display: "block",
+            margin: "0.25rem 0",
+            opacity: loaded ? 1 : 0,
+            transition: "opacity 200ms ease",
+          }}
+          unoptimized
+        />
+      </div>
     </div>
   );
 };
@@ -63,13 +123,12 @@ export default function ChatPage() {
   const [input, setInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [recording, setRecording] = useState<boolean>(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
   const [speechSupported, setSpeechSupported] = useState<boolean>(false);
-  const [mode, setMode] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   // Ref pour maintenir l'état le plus récent des messages (évite tout décalage d'ordre)
   const messagesRef = useRef<Message[]>([]);
-  const router = useRouter();
+  const [lightbox, setLightbox] = useState<{ src: string; alt?: string } | null>(null);
 
   useEffect(() => {
     if (listRef.current) {
@@ -81,16 +140,18 @@ export default function ChatPage() {
   // Initialiser la reconnaissance vocale si dispo
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition;
+      const w = window as unknown as {
+        SpeechRecognition?: new () => MinimalSpeechRecognition;
+        webkitSpeechRecognition?: new () => MinimalSpeechRecognition;
+      };
+      const SpeechRecognition = w.SpeechRecognition || w.webkitSpeechRecognition;
       if (SpeechRecognition) {
         setSpeechSupported(true);
         const recognition = new SpeechRecognition();
         recognition.lang = "fr-FR";
         recognition.interimResults = true;
         recognition.continuous = true;
-        recognition.onresult = (e: any) => {
+        recognition.onresult = (e: MinimalRecognitionEvent) => {
           let interim = "";
           for (let i = e.resultIndex; i < e.results.length; i++) {
             const transcript = e.results[i][0].transcript;
@@ -124,13 +185,13 @@ export default function ChatPage() {
     if (!speechSupported) return;
     if (!recording) {
       try {
-        recognitionRef.current.start();
+        recognitionRef.current?.start();
         setRecording(true);
       } catch {
         /* ignore start errors */
       }
     } else {
-      recognitionRef.current.stop();
+      recognitionRef.current?.stop();
       setRecording(false);
       if (inputRef.current)
         inputRef.current.placeholder = "Ask anything / Pose ta question";
@@ -177,7 +238,6 @@ export default function ChatPage() {
         fusion?: { sections: { heading: string; markdown: string; images: { src: string; alt?: string; caption?: string; citeIndex?: number }[] }[] };
       } = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
-      setMode(data.mode || null);
       // Generic markdown-first rendering (e.g., chitchat, capabilities)
       if (data.markdown) {
         console.log("GENERIC_MARKDOWN", { mode: data.mode, mdLen: data.markdown.length });
@@ -324,6 +384,16 @@ export default function ChatPage() {
     }
   }
 
+  // Open lightbox from HTML-rendered content
+  function handleHtmlImageClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement | null;
+    if (target && target.tagName === "IMG") {
+      const img = target as HTMLImageElement;
+      const original = extractOriginalSrc(img.currentSrc || img.src);
+      setLightbox({ src: original, alt: img.alt || "" });
+    }
+  }
+
   // Auto-resize textarea
   useEffect(() => {
     if (inputRef.current) {
@@ -334,7 +404,22 @@ export default function ChatPage() {
     }
   }, [input]);
 
-  const displayArticles = usedArticles || articles;
+  // Close lightbox on ESC and lock scroll
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [lightbox]);
+
+  // const displayArticles = usedArticles || articles; // no longer used
 
   return (
     <div className="min-h-screen w-full bg-[url('/space-background.jpg')] bg-cover bg-center bg-fixed">
@@ -469,7 +554,13 @@ export default function ChatPage() {
                             className="text-blue-400 hover:underline"
                           />
                         ),
-                        img: ({ ...props }) => <MarkdownImage {...props} />,
+                        img: ({ src, alt }) => (
+                          <MarkdownImage
+                            src={typeof src === "string" ? src : ""}
+                            alt={alt || ""}
+                            onOpenLightbox={(s, a) => setLightbox({ src: s, alt: a })}
+                          />
+                        ),
                         h1: ({ ...props }) => (
                           <h1
                             {...props}
@@ -538,6 +629,7 @@ export default function ChatPage() {
                   >
                     <div
                       className="space-y-3"
+                      onClick={handleHtmlImageClick}
                       dangerouslySetInnerHTML={{ __html: m.html }}
                     />
                   </div>
@@ -665,6 +757,51 @@ export default function ChatPage() {
           </form>
         )}
       </div>
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="relative w-[95vw] h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Fermer"
+              className="absolute -top-10 right-0 text-neutral-300 hover:text-white transition"
+              onClick={() => setLightbox(null)}
+            >
+              ✕ Fermer (Esc)
+            </button>
+            <a
+              href={lightbox.src}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute -top-10 left-0 text-neutral-300 hover:text-white underline"
+              aria-label="Ouvrir l'image d'origine dans un nouvel onglet"
+            >
+              Ouvrir l’original ↗
+            </a>
+            <Image
+              src={lightbox.src}
+              alt={lightbox.alt || ""}
+              fill
+              sizes="100vw"
+              style={{ objectFit: 'contain' }}
+              className="rounded-md shadow-2xl"
+              unoptimized
+            />
+            {lightbox.alt && (
+              <p className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 px-3 py-1 rounded text-xs text-neutral-200">
+                {lightbox.alt}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

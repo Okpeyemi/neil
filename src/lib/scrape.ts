@@ -35,7 +35,7 @@ async function scrapeArticle(url: string): Promise<{ text: string; images: Scrap
       const articleEl = root.querySelector('article') as HTMLElement | null;
       if (articleEl) mainEl = articleEl; else mainEl = (root.querySelector('body') as HTMLElement | null) || (root as unknown as HTMLElement);
     }
-    mainEl.querySelectorAll('script,style,nav,header,footer,aside').forEach((n: HTMLElement) => (n as any).remove());
+    mainEl.querySelectorAll('script,style,nav,header,footer,aside').forEach((n: HTMLElement) => n.remove());
     const text = mainEl.textContent.trim().replace(/\s+/g, ' ').slice(0, MAX_MAIN_TEXT_CHARS);
     const figures: ScrapedImage[] = [];
 
@@ -141,27 +141,28 @@ function pickMainContainer(root: HTMLElement): HTMLElement {
 }
 
 function normalizeLinksAndImages(container: HTMLElement, baseUrl: string, figureLimit: number) {
-  container.querySelectorAll('a').forEach((aEl: any) => {
+  container.querySelectorAll('a').forEach((aEl: HTMLElement) => {
     const href = aEl.getAttribute('href');
     if (href) aEl.setAttribute('href', absolutize(href, baseUrl));
     aEl.setAttribute('target', '_blank');
     aEl.setAttribute('rel', 'noopener nofollow noreferrer');
-    Object.keys(aEl.attributes || {}).forEach(k => {
+    const attrs = aEl.attributes || {} as Record<string,string>;
+    Object.keys(attrs).forEach(k => {
       if (k.toLowerCase().startsWith('on')) aEl.removeAttribute(k);
     });
   });
-
+  
   const figures = container.querySelectorAll('figure');
-  figures.forEach((fig: any, idx: number) => {
+  figures.forEach((fig: HTMLElement, idx: number) => {
     if (idx >= figureLimit) {
       fig.remove();
       return;
     }
     try { fig.setAttribute('style', 'margin:0.75rem 0;'); } catch {}
-    fig.querySelectorAll('img').forEach((img: any) => {
+    fig.querySelectorAll('img').forEach((img: HTMLElement) => {
       const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original');
       if (src) img.setAttribute('src', absolutize(src, baseUrl));
-      ;['srcset','sizes','integrity','crossorigin','referrerpolicy','style','onload','onclick','onerror'].forEach(attr => img.removeAttribute(attr));
+      ['srcset','sizes','integrity','crossorigin','referrerpolicy','style','onload','onclick','onerror'].forEach(attr => img.removeAttribute(attr));
       img.setAttribute('loading', 'lazy');
       img.setAttribute('decoding', 'async');
       const alt = img.getAttribute('alt') || '';
@@ -175,10 +176,10 @@ function extractAllowedHtml(container: HTMLElement, perArticleNodeLimit: number)
   const keepSelectors = 'h1,h2,h3,h4,p,ul,ol,blockquote,pre,figure,table';
   const nodes = container.querySelectorAll(keepSelectors);
   const limited = nodes.slice(0, perArticleNodeLimit);
-  limited.forEach((node: any) => {
-    node.querySelectorAll('script,style,meta,link,iframe,object,embed,noscript').forEach((bad: any) => bad.remove());
-    node.querySelectorAll('*').forEach((el: any) => {
-      const attrKeys = Object.keys(el.attributes || {});
+  limited.forEach((node: HTMLElement) => {
+    node.querySelectorAll('script,style,meta,link,iframe,object,embed,noscript').forEach((bad: HTMLElement) => bad.remove());
+    node.querySelectorAll('*').forEach((el: HTMLElement) => {
+      const attrKeys = Object.keys((el.attributes || {}) as Record<string,string>);
       for (const k of attrKeys) {
         if (k.toLowerCase().startsWith('on')) el.removeAttribute(k);
       }
@@ -188,7 +189,7 @@ function extractAllowedHtml(container: HTMLElement, perArticleNodeLimit: number)
       }
     });
   });
-  return limited.map((n: any) => n.toString()).join('\n');
+  return limited.map((n: HTMLElement) => n.toString()).join('\n');
 }
 
 const htmlCache = new Map<string, { ts: number; html: string }>();
