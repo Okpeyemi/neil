@@ -359,7 +359,8 @@ export async function POST(req: NextRequest) {
           }
 
           // If fusion failed or empty, extract and return structured HTML from each article
-          const sections = await batchScrapeHtml(relatedArticles, { perArticleNodeLimit: 60, perArticleFigureLimit: 8 });
+          // Capture more content and figures to reduce cases of missing images/content
+          const sections = await batchScrapeHtml(relatedArticles, { perArticleNodeLimit: 120, perArticleFigureLimit: 12 });
           if (sections.length) {
             const combinedHtml = sections.map(({ article, html }, idx) => (
               `<section class="scraped-article" style="margin:1rem 0;padding:0.5rem 0;border-top:1px solid rgba(255,255,255,0.08)">`+

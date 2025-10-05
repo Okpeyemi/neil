@@ -1,0 +1,34 @@
+{
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "fr": "French"
+  },
+  "ui": {
+    "randomArticlesTitle": "NASA articles",
+    "greeting": "Hey, {name}.",
+    "tagline": "Ready to dive into NASA's fascinating research?",
+    "placeholder": "Ask anything",
+    "mic": {
+      "start": "Start dictation",
+      "stop": "Stop dictation",
+      "unsupported": "Speech recognition not supported"
+    },
+    "disclaimer": "AI may make mistakes.",
+    "image": {
+      "viewFullscreen": "View image fullscreen"
+    },
+    "lightbox": {
+      "close": "Close (Esc)",
+      "openOriginal": "Open original ↗",
+      "openOriginalAria": "Open the original image in a new tab"
+    },
+    "you": "YOU"
+  },
+  "mode": {
+    "discovery": { "label": "Discovery", "desc": "Balanced and general response" },
+    "scientists": { "label": "Scientists", "desc": "Focus on methods, data, citations" },
+    "investors": { "label": "Investors", "desc": "Market, ROI, risks, roadmap" },
+    "architects": { "label": "Architects", "desc": "Architecture, integration, constraints" }
+  }
+}

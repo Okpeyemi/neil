@@ -11,8 +11,8 @@ export interface ScrapeHtmlOptions {
 
 // Limits / tuning
 const MAX_MAIN_TEXT_CHARS = 20_000;
-const MAX_IMAGES = 12;
-const SCRAPE_TTL = 1000 * 60 * 30; // 30 min cache
+const MAX_IMAGES = 18;
+const SCRAPE_TTL = 1000 * 60 * 10; // 10 min cache
 
 function absolutize(url: string, base: string): string {
   try { return new URL(url, base).toString(); } catch { return url; }
@@ -24,7 +24,9 @@ async function scrapeArticle(url: string): Promise<{ text: string; images: Scrap
       cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7',
+        'Referer': `${new URL(url).origin}/`
       }
     });
     if (!res.ok) return { text: '', images: [] };
@@ -93,6 +95,37 @@ async function scrapeArticle(url: string): Promise<{ text: string; images: Scrap
       const altFinal = found.alt || (caption ? caption.slice(0, 120) : undefined);
       figures.push({ src: found.src, alt: altFinal, caption });
     });
+    // Capture standalone images not wrapped in <figure>
+    if (figures.length < MAX_IMAGES) {
+      const imgs = mainEl.querySelectorAll('img');
+      const used = new Set(figures.map(f => f.src));
+      for (const img of imgs) {
+        try {
+          // skip if inside a figure by walking up the tree
+          type NodeLike = { parentNode?: NodeLike | null; tagName?: string };
+          let p: NodeLike | null = (img as unknown as NodeLike).parentNode ?? null;
+          let insideFigure = false;
+          // eslint-disable-next-line no-constant-condition
+          while (p) {
+            const tag = (p.tagName || '').toLowerCase();
+            if (tag === 'figure') { insideFigure = true; break; }
+            p = p.parentNode ?? null;
+          }
+          if (insideFigure) continue;
+          let raw = (img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original')) || '';
+          if (!raw) {
+            raw = parseSrcset(img.getAttribute('srcset')) || parseSrcset(img.getAttribute('data-srcset')) || '';
+          }
+          if (!raw) continue;
+          const abs = absolutize(raw, url);
+          if (used.has(abs)) continue;
+          const alt = img.getAttribute('alt') || undefined;
+          figures.push({ src: abs, alt, caption: undefined });
+          used.add(abs);
+          if (figures.length >= MAX_IMAGES) break;
+        } catch { /* ignore */ }
+      }
+    }
     console.log('SCRAPE_RESULT', { url, textLen: text.length, figures: figures.length, first: figures[0]?.src || null });
     return { text, images: figures };
   } catch {
@@ -170,10 +203,22 @@ function normalizeLinksAndImages(container: HTMLElement, baseUrl: string, figure
       try { img.setAttribute('style', 'max-width:100%;height:auto;display:block;margin:0.25rem 0;'); } catch {}
     });
   });
+
+  // Normalize standalone images not wrapped in <figure>
+  container.querySelectorAll('img').forEach((img: HTMLElement) => {
+    const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original');
+    if (src) img.setAttribute('src', absolutize(src, baseUrl));
+    ['srcset','sizes','integrity','crossorigin','referrerpolicy','style','onload','onclick','onerror'].forEach(attr => img.removeAttribute(attr));
+    img.setAttribute('loading', 'lazy');
+    img.setAttribute('decoding', 'async');
+    const alt = img.getAttribute('alt') || '';
+    img.setAttribute('alt', alt);
+    try { img.setAttribute('style', 'max-width:100%;height:auto;display:block;margin:0.25rem 0;'); } catch {}
+  });
 }
 
 function extractAllowedHtml(container: HTMLElement, perArticleNodeLimit: number): string {
-  const keepSelectors = 'h1,h2,h3,h4,p,ul,ol,blockquote,pre,figure,table';
+  const keepSelectors = 'h1,h2,h3,h4,p,ul,ol,blockquote,pre,figure,img,table';
   const nodes = container.querySelectorAll(keepSelectors);
   const limited = nodes.slice(0, perArticleNodeLimit);
   limited.forEach((node: HTMLElement) => {
@@ -201,7 +246,14 @@ export async function scrapeArticleHtml(url: string, opts?: ScrapeHtmlOptions): 
   const cached = htmlCache.get(url);
   if (cached && (now - cached.ts) < SCRAPE_TTL) return cached.html;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SpaceBioBot/1.0)' } });
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7'
+      }
+    });
     if (!res.ok) return '';
     const html = await res.text();
     const root = parse(html);

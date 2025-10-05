@@ -1,0 +1,34 @@
+{
+  "language": {
+    "label": "Langue",
+    "en": "Anglais",
+    "fr": "Français"
+  },
+  "ui": {
+    "randomArticlesTitle": "Articles de la NASA",
+    "greeting": "Hey, {name}.",
+    "tagline": "Prêt à plonger dans les recherches fascinantes de la NASA?",
+    "placeholder": "Pose ta question",
+    "mic": {
+      "start": "Dicter un message",
+      "stop": "Arrêter la dictée",
+      "unsupported": "Reconnaissance vocale non supportée"
+    },
+    "disclaimer": "L’IA peut se tromper.",
+    "image": {
+      "viewFullscreen": "Voir l'image en plein écran"
+    },
+    "lightbox": {
+      "close": "Fermer (Esc)",
+      "openOriginal": "Ouvrir l’original ↗",
+      "openOriginalAria": "Ouvrir l'image d'origine dans un nouvel onglet"
+    },
+    "you": "VOUS"
+  },
+  "mode": {
+    "discovery": { "label": "Découverte", "desc": "Réponse générale et équilibrée" },
+    "scientists": { "label": "Scientifiques", "desc": "Focalisée méthodes, données, citations" },
+    "investors": { "label": "Investisseurs", "desc": "Marché, ROI, risques, feuille de route" },
+    "architects": { "label": "Architectes", "desc": "Architecture, intégration, contraintes" }
+  }
+}
