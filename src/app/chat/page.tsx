@@ -145,7 +145,7 @@ export default function ChatPage() {
           <path d="M16 8l-4 8-4-4 8-4z" />
         </svg>
       ),
-      desc: "Réponse générale et équilibrée",
+      desc: "General and balanced response",
     },
     {
       label: "Scientific",
@@ -156,7 +156,7 @@ export default function ChatPage() {
           <path d="M9 2v6l-5 9a4 4 0 0 0 3.5 6h9A4 4 0 0 0 20 17l-5-9V2" />
         </svg>
       ),
-      desc: "Focalisée méthodes, données, citations",
+      desc: "Focused on methods, data, citations",
     },
     {
       label: "Investor",
@@ -167,7 +167,7 @@ export default function ChatPage() {
           <path d="M7 15l4-4 3 3 4-6" />
         </svg>
       ),
-      desc: "Marché, ROI, risques, feuille de route",
+      desc: "Focused on market, ROI, risks, roadmap",
     },
     {
       label: "Architect",
@@ -179,7 +179,7 @@ export default function ChatPage() {
           <path d="M12 15v6" />
         </svg>
       ),
-      desc: "Architecture, intégration, contraintes",
+      desc: "Focused on architecture, integration, constraints",
     },
   ];
 
