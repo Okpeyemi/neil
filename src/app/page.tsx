@@ -239,8 +239,8 @@ export default function Home() {
         {/* Mode selector */}
       <div className="fixed top-4 left-4 z-10"><ModeDropdown /></div>
 
-<div className="flex flex-col h-[100vh] max-w-3xl mx-auto px-4 py-6 overflow-auto scroll-hide">
-  <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+<div className="flex flex-col h-[100vh] mwax-w-3xl mx-auto px-4 py-6">
+  <div className="flex-1 overflow-y-auto scroll-hide space-y-4 pr-2">
     {messages.map((m, i) => (
       <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
         {m.role === 'user' ? (
