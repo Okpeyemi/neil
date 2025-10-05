@@ -1,353 +1,156 @@
-# Neil – NASA Bioscience Intelligence Chat Interface
+## NASA Scientific Articles Chat (RAG + Web Search) – Phase 1
 
-[![Production](https://img.shields.io/badge/Live_App-neil-eight.vercel.app-brightgreen?style=for-the-badge)](https://neil-eight.vercel.app/)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19-149ECA?logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38BDF8?logo=tailwind-css)](https://taialwindcss.com/)
-[![i18n](https://img.shields.io/badge/Internationalization-next--intl-8A2BE2)](https://next-intl-docs.vercel.app/)
+This project aims to build a Retrieval-Augmented Generation (RAG) chatbot over NASA / space biology related scientific articles (PubMed Central). It scrapes article HTML, stores structured JSON, (later) indexes embeddings into a vector database, and serves a chat UI that answers user questions using local context first, falling back to web search.
 
-> An AI-powered conversational interface to explore, query, and summarize NASA bioscience experiment publications (608+ studies) using natural language (text and voice).  
-> Goal: Help scientists, mission planners, hypothesis generators, and decision makers rapidly surface insights, trends, knowledge gaps, and experiment outcomes relevant to future human exploration of the Moon and Mars.
+Current status: Phase 1 (Scraping + Basic Chat UI + API stubs)
 
 ---
-
-## 1. Problem Context (Challenge Summary)
-
-NASA has decades of bioscience experimentation data describing how humans, plants, microbes, and other biological systems respond to the space environment. While these publications are publicly available, discovering actionable insights (e.g., physiological adaptations, experimental results, risk factors, countermeasures) is difficult due to:
-
-- Volume & fragmentation of studies
-- Heterogeneous terminology
-- Varied experiment conditions over time
-- Differing levels of detail across sections (e.g., Results vs. Conclusions)
-
-Emerging AI methods (LLMs, embeddings, summarization pipelines, knowledge graphs) make it possible to:
-- Synthesize findings across experiments
-- Identify gaps or consensus/disagreement
-- Support hypothesis generation
-- Provide mission-relevant insight pathways
-
----
-
-## 2. Our Solution
-
-Neil provides a focused conversational agent (chatbot) that:
-- Accepts user queries as text or recorded audio
-- Interprets intent and retrieves semantically related NASA bioscience publications
-- Generates synthesized responses grounded in source documents
-- Optionally returns structured highlights (e.g., experiment outcomes, organism focus, environment factors—future extension)
-- Maintains conversational context across turns (multi-step refinement)
-- (Planned) Allows drill-down into citation provenance and evidence strings
-
-This first iteration prioritizes:
-- Fast question → answer loop
-- Extensibility for richer exploration (dashboards, knowledge graph views, temporal trend analysis)
+## Roadmap (Phases)
+1. Phase 1 (DONE):
+	- CSV ingestion & scraper (`scripts/scrape.ts`)
+	- JSON storage (`data/articles/*.json`)
+	- Basic chat interface (echo reply)
+	- API route stubs `/api/chat`, `/api/scrape`
+2. Phase 2: Embeddings + Vector DB (Pinecone)
+	- Generate embeddings per section using HuggingFace model (e.g. `sentence-transformers/all-MiniLM-L6-v2` via Inference API / local transformers.js)
+	- Upsert vectors (id, text, metadata)
+	- Semantic similarity search
+3. Phase 3: Chatbot with Context
+	- RAG pipeline: user question -> embed -> top-k retrieval -> prompt assembly -> OpenRouter model (`gpt-oss-20b`)
+	- Streaming responses (optional)
+	- Source citations (section headings + URLs)
+4. Phase 4: Web Search Fallback + Tests
+	- If similarity threshold not met, perform web search (SerpAPI / DuckDuckGo)
+	- Merge result snippets into prompt
+	- Jest unit tests (scraper utilities, ranking) + optional Cypress E2E
 
 ---
-
-## 3. Target User Profiles
-
-| Audience | Needs | How Neil Helps |
-|----------|-------|----------------|
-| Scientists | Hypothesis refinement, compare past outcomes | Rapid summarization + targeted follow-up queries |
-| Mission Architects | Risk identification, countermeasure tracking | Aggregated insights on biological system responses |
-| Program Managers | Funding gap detection | Surface under-explored topics / missing data domains |
-| Analysts | Synthesis & reporting | Structured summaries with (planned) traceability |
+## Tech Stack
+Framework: Next.js (App Router, TypeScript)
+UI: Tailwind CSS (v4) – minimal custom components
+Scraping: axios + cheerio + csv-parser
+Future RAG: Pinecone vector DB + HuggingFace embeddings
+LLM Access: OpenRouter (model: `gpt-oss-20b`)
+Search Fallback: External web search API (configurable)
 
 ---
-
-## 4. Core Functionalities (Current & Planned)
-
-| Category | Current | Planned / Roadmap |
-|----------|---------|-------------------|
-| Text Q&A | ✅ Basic multi-turn | Context weighting & query rewriting |
-| Audio Input | ✅ Recording → transcription | Streaming partial responses |
-| Retrieval | ✅ Semantic similarity (embeddings; implementation detail abstracted) | Hybrid lexical + semantic + section weighting |
-| Summarization | ✅ High-level answer generation | Section-aware (Intro vs. Results vs. Conclusion) |
-| Provenance | ⚠ Partial (conceptual) | Inline citation anchors & explorable source panels |
-| Knowledge Graph | ⏳ Not yet | Entity-relation extraction (organism → condition → outcome) |
-| Gap Analysis | ⏳ Not yet | Trend detection + cluster visualizations |
-| Multilingual UI | ⏳ Not yet | Domain-specific translation glossaries |
-| UI Mode | ✅ Chat-centric | Dual: Chat + Analytical Dashboard |
-| Security | Basic (public data) | Rate limiting & abuse detection |
-| Exports | ⏳ Not yet | JSON / CSV for evidence sets |
-
----
-
-## 5. High-Level Architecture (Conceptual)
-
+## Directory Overview
 ```
-User (Text / Audio)
-        |
-        v
-(If Audio) Browser Recorder
-        |
-        v
-Transcription Layer (Web Speech API or external ASR*)  *implementation-dependent
-        |
-        v
-Query Normalization (lowercasing, domain term expansion*)
-        |
-        v
-Embedding Generation (LLM / vector model*)
-        |
-        v
-Vector Store / Semantic Index (NASA publication chunks)
-        |
-        v
-Ranked Context Assembly (dedupe + section weighting)
-        |
-        v
-LLM Answer Generation (with grounding instructions)
-        |
-        v
-Response + (Planned) Citation / Source Panels
-```
-
-(* Some components are architectural intentions; actual implementation may evolve.)
-
----
-
-## 6. Data Handling & Publication Ingestion (Design)
-
-| Step | Description |
-|------|-------------|
-| Source Acquisition | Fetch / download metadata + full text (when available) from NASA bioscience listing |
-| Cleaning | Strip boilerplate, normalize headings, section detection (Intro / Methods / Results / Conclusion) |
-| Segmentation | Chunk documents using token-aware windowing; preserve experiment identifiers |
-| Embedding | Generate vector embeddings per chunk (model TBD or pluggable) |
-| Indexing | Store in vector DB (e.g., future: Pinecone / pgvector / open-source; current: abstract layer) |
-| Refresh Cycle | Periodic rebuild or incremental upsert for new publications |
-| Versioning | (Planned) Index manifest with hash + ingestion date |
-
----
-
-## 7. Conversation & Context Strategy
-
-- Turn-level memory: maintain last N exchanges (configurable)
-- Context budgeting: choose top K chunks under model token limit
-- Section prioritization (planned):
-  - Results > Abstract > Conclusion > Introduction
-- Guardrails (planned):
-  - Refusal for out-of-domain queries
-  - Hallucination reduction via answer template:
-    - Direct answer
-    - Supporting evidence
-    - Limitations / uncertainty
-    - Suggested follow-up query
-
----
-
-## 8. Audio Query Flow
-
-1. User clicks microphone
-2. Recording starts (UI state: listening)
-3. Audio → transcription
-4. Transcript injected as user message
-5. Same retrieval + generation path as text
-
-Potential future additions:
-- Language auto-detection
-- Confidence scoring
-- Noise filtering / VAD (voice activity detection)
-
----
-
-## 9. Tech Stack (Current Codebase)
-
-| Layer | Tool |
-|-------|------|
-| Framework | Next.js 15 (Turbopack) |
-| Language | TypeScript |
-| UI | React 19 |
-| Styling | Tailwind CSS 4 |
-| i18n | `next-intl` |
-| Content Rendering | `react-markdown`, `remark-gfm` |
-| HTML Parsing | `node-html-parser` |
-| (Planned AI libs) | Embedding + LLM provider (e.g., OpenAI / Anthropic / Local) |
-| Deployment | Vercel |
-
-Note: AI- and vector-related libraries are intentionally decoupled; integration layer can be swapped without rewriting UI.
-
----
-
-## 10. Project Structure (Indicative / Evolving)
-
-```
-app/
-  [locale]/
-    layout.tsx
-    page.tsx
-  api/
-    chat/route.ts      # Chat request handler (planned or present)
-    ingest/route.ts    # (Optional) secured ingestion trigger
-components/
-  chat/
-    ChatInterface.tsx
-    MessageBubble.tsx
-    AudioRecorder.tsx
-  ui/
-    Button.tsx
-    Spinner.tsx
-lib/
-  embeddings/
-  retrieval/
-  summarization/
-  audio/
-  i18n/
-messages/
-public/
-types/
+scripts/            Standalone Node/TS scripts (scrape.ts)
+data/articles/      JSON article outputs (gitignored except .gitkeep)
+src/lib/            Shared types & utilities
+src/app/api/        API route handlers (chat, scrape trigger)
+src/app/page.tsx    Chat UI (Phase 1)
+public/             Static assets + source CSV
 ```
 
 ---
+## Environment Variables
+Copy `.env.example` to `.env.local` and fill in keys (only needed for future phases right now):
+```
+OPEN_ROUTER_API_KEY=sk-...
+PINECONE_API_KEY=pc-...
+PINECONE_ENV=us-east-1-gcp
+PINECONE_INDEX_NAME=nasa-articles
+SEARCH_API_KEY=your_search_key
+CSV_PATH=public/SB_publication_PMC.csv
+OUTPUT_DIR=data/articles
+LIMIT=20            # optional limit for quick runs
+DELAY_MS=2500       # polite delay between requests
+RETRIES=3
+```
 
-## 11. Getting Started
-
+---
+## Install & Run (Phase 1)
+1. Install deps:
 ```bash
-git clone https://github.com/Okpeyemi/neil.git
-cd neil
 npm install
+```
+2. Run scraper (will read CSV and save JSON docs):
+```bash
+npm run scrape
+```
+	Optional overrides:
+```bash
+LIMIT=10 DELAY_MS=3000 npm run scrape
+```
+3. Start dev server:
+```bash
 npm run dev
-# Open http://localhost:3000
+```
+Open http://localhost:3000 – ask a question (echo response for now).
+
+---
+## Scraper Details
+Input CSV columns: `Title`, `Link` (PMC article URLs). Example row:
+```
+"Gene Expression in Space-Biology",https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4136787/
+```
+Extraction steps:
+1. Download HTML with polite User-Agent + delay + retries.
+2. Parse with Cheerio.
+3. Extract:
+	- Title (`h1` or `<title>`)
+	- Abstract (element with id/class containing `abstract`)
+	- Sections: iterate h2/h3, capture following paragraphs until next heading.
+	- Fallback single `FullText` section if structured headings missing.
+4. Write JSON: `{ id, title, sourceUrl, abstract, sections[], scrapedAt }` to `data/articles/<id>.json`.
+
+Rate limits: configurable delay via `DELAY_MS`. Retries with linear backoff.
+
+---
+## Planned RAG Pipeline (Phase 2–3)
+1. Offline embedding generation script: iterate JSON docs, chunk (by section or token length), call embedding model, upsert to Pinecone.
+2. Query flow:
+	- User question -> embedding -> vector search (top 5) -> filter by similarity threshold (e.g. 0.7 cosine)
+	- Construct prompt: system instructions + formatted context blocks + user question
+	- Call OpenRouter (model: `gpt-oss-20b`) with safety guardrails
+3. Response packaging: answer + list of source section headings + article URLs
+
+---
+## Web Search Fallback (Phase 4)
+If no vector result above threshold:
+1. Perform web search (SerpAPI / DuckDuckGo simple API)
+2. Take top 3–5 results: title + snippet + URL
+3. Append to prompt as secondary context (flagged as external web info)
+4. Return answer with source grouping (local vs web)
+
+---
+## Testing Strategy
+Planned (Phase 4):
+* Unit tests (Jest):
+  - utils: slugify, generateId, fetchWithRetry (mock axios)
+  - section extraction (sample HTML fixtures)
+* Integration: simulate question -> retrieval stub
+* Optional E2E: Cypress run through chat UI
+
+---
+## Prompt Template (Draft)
+```
+You are an assistant answering questions strictly using the provided context from NASA / space biology scientific articles. If the answer is not present, say you will search the web (future). Cite section headings and article titles.
+
+Context:
+{{CONTEXT_BLOCKS}}
+
+Question: {{USER_QUESTION}}
+Answer in French, concise, with bullet points when listing.
 ```
 
 ---
-
-## 12. Environment Variables (Proposed)
-
-Create `.env.local`:
-
-```
-# Public base URL local
-OPENROUTER_REFERER=http://localhost:3000
-
-# Default locale
-NEXT_PUBLIC_DEFAULT_LOCALE=en
-
-# AI Provider
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-OPENROUTER_MODEL_FUSION=gpt-oss-20b
-OPENROUTER_API_KEY=
-OPENROUTER_TITLE=neil-engine
-```
+## Deployment (Future)
+* Vercel: add required env vars (OpenRouter, Pinecone) in dashboard
+* Prevent running heavy scraper on serverless automatically – keep as manual script
 
 ---
-
-## 13. Usage (MVP)
-
-1. Open the app
-2. Type a question like:
-   - "What have NASA studies shown about plant root growth in microgravity?"
-   - "Identify knowledge gaps in muscle atrophy countermeasures."
-3. (Optional) Click microphone, ask verbally
-4. Receive structured answer (summary + elaboration)
-5. Refine: "Focus on cardiovascular findings" or "List 3 gaps."
-
-(Planned) Click citations to expand original experiment summary.
+## Notes & Compliance
+* Scraper is polite: delay + custom UA
+* Respect PMC usage terms; avoid extremely high concurrency
+* Only storing textual content locally for research Q/A
 
 ---
-
-## 14. Retrieval & Ranking Strategy (Planned Enhancements)
-
-| Mechanism | Purpose |
-|-----------|---------|
-| Hybrid search | Combine semantic + keyword for precision |
-| Section weighting | Boost 'Results' for empirical claims |
-| Temporal filtering | Explore trends over mission eras |
-| Entity extraction | Build organism-pathway-condition graph |
-| Disagreement detection | Flag conflicting findings |
+## Next Steps
+See roadmap phases above. Immediate next: implement embeddings + Pinecone integration script (`scripts/embed.ts`).
 
 ---
-
-## 15. Performance & Optimization
-
-- Incremental indexing vs. full rebuilds
-- Token-aware context packing
-- Caching frequent queries (edge cache layer)
-- Streaming response (planned)
-- Client-level suspense boundaries for partial hydration
-
----
-
-## 16. Accessibility
-
-- Keyboard-first interaction (tab focus)
-- Visible focus rings
-- ARIA live regions for streaming answer segments (planned)
-- Transcript display for audio queries
-
----
-
-## 17. Security & Ethical Considerations
-
-| Concern | Mitigation |
-|---------|------------|
-| Hallucination | Grounding instructions + citations |
-| Misinterpretation of experiment limitations | Include disclaimers |
-| Sensitive biomedical overreach | Restrict speculative medical advice |
-| Abuse (spam queries) | Rate limiting (future) |
-
----
-
-## 18. Contribution Guidelines
-
-1. Fork repo
-2. Create a feature branch: `feat/<short-name>`
-3. Follow Conventional Commits (`feat:`, `fix:`, `refactor:`…)
-4. Add/update type definitions for new modules
-5. Open PR with:
-   - Description
-   - Screenshots (if UI)
-   - Notes on retrieval or model changes
-
----
-
-## 19. Limitations (Current)
-
-- No full provenance UI yet
-- No public dataset ingestion pipeline exposed
-- AI provider abstraction not published in repo (as of now)
-- Knowledge graph features not implemented yet
-- Audio pipeline depends on browser capabilities / external ASR
-
----
-
-## 20. Future Extensions
-
-- Multi-turn experiment comparison mode
-- "Insight cards" summarizing clusters
-- Mission scenario simulation queries (e.g., "Long-duration lunar impacts on X")
-- Offline embeddings recalculation CLI
-- Bias detection in summarization (meta-analysis heuristics)
-
----
-
-## 21. Acknowledgements
-
-- NASA Biological & Physical Sciences Division publications dataset (challenge context)
-- Open-source ecosystem (Next.js, React, Tailwind, remark)
-- Future: credit embedding + LLM providers
-
----
-
-## 22. Disclaimer
-
-This tool synthesizes publicly available research content.  
-It does NOT provide medical advice or official NASA policy guidance.  
-Always verify critical findings against primary sources.
-
----
-
-## Quick TL;DR
-
-Neil = AI chat interface over NASA bioscience publications.  
-Ask: "How does microgravity affect immune response?"  
-Get: Focused, synthesized answer grounded in experiments.  
-Interact via text or voice. Future: knowledge graph + analytics dashboard.
-
----
-
-If you need this README further aligned once more code is added (e.g., actual retrieval layer), let me know and I can tailor it precisely to the implemented modules.
-
-🚀 Exploring space biology—one question at a time.
+## License
+MIT (add LICENSE file if distribution required)
