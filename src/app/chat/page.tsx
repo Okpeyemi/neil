@@ -16,7 +16,7 @@ interface Article {
   link: string;
 }
 
-type UserMode = "Découverte" | "Scientifiques" | "Investisseurs" | "Architects";
+type UserMode = "Discovery" | "Scientific" | "Investor" | "Architect";
 
 // Minimal types for Web Speech API to avoid explicit any
 type MinimalResultItem = { 0: { transcript: string }; isFinal: boolean };
@@ -131,14 +131,14 @@ export default function ChatPage() {
   // Ref pour maintenir l'état le plus récent des messages (évite tout décalage d'ordre)
   const messagesRef = useRef<Message[]>([]);
   const [lightbox, setLightbox] = useState<{ src: string; alt?: string } | null>(null);
-  const [userMode, setUserMode] = useState<UserMode>("Découverte");
+  const [userMode, setUserMode] = useState<UserMode>("Discovery");
   const [randomArticles, setRandomArticles] = useState<Article[] | null>(null);
   const [randomLoading, setRandomLoading] = useState<boolean>(false);
 
   const MODE_OPTIONS: { label: UserMode; key: UserMode; icon: React.ReactNode; desc: string }[] = [
     {
-      label: "Découverte",
-      key: "Découverte",
+      label: "Discovery",
+      key: "Discovery",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -148,8 +148,8 @@ export default function ChatPage() {
       desc: "Réponse générale et équilibrée",
     },
     {
-      label: "Scientifiques",
-      key: "Scientifiques",
+      label: "Scientific",
+      key: "Scientific",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 2h12" />
@@ -159,8 +159,8 @@ export default function ChatPage() {
       desc: "Focalisée méthodes, données, citations",
     },
     {
-      label: "Investisseurs",
-      key: "Investisseurs",
+      label: "Investor",
+      key: "Investor",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 3v18h18" />
@@ -170,8 +170,8 @@ export default function ChatPage() {
       desc: "Marché, ROI, risques, feuille de route",
     },
     {
-      label: "Architects",
-      key: "Architects",
+      label: "Architect",
+      key: "Architect",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="18" height="12" rx="2" />
@@ -183,16 +183,16 @@ export default function ChatPage() {
     },
   ];
 
-  function toServerMode(m: UserMode): "decouverte" | "scientifiques" | "investisseurs" | "architects" {
+  function toServerMode(m: UserMode): "discovery" | "scientific" | "investor" | "architect" {
     switch (m) {
-      case "Scientifiques":
-        return "scientifiques";
-      case "Investisseurs":
-        return "investisseurs";
-      case "Architects":
-        return "architects";
+      case "Scientific":
+        return "scientific";
+      case "Investor":
+        return "investor";
+      case "Architect":
+        return "architect";
       default:
-        return "decouverte";
+        return "discovery";
     }
   }
 
@@ -259,7 +259,7 @@ export default function ChatPage() {
     if (typeof window === "undefined") return;
     try {
       const saved = window.localStorage.getItem("neil:userMode");
-      if (saved === "Découverte" || saved === "Scientifiques" || saved === "Investisseurs" || saved === "Architects") {
+      if (saved === "Discovery" || saved === "Scientifiques" || saved === "Investisseurs" || saved === "Architects") {
         setUserMode(saved as UserMode);
       }
     } catch {
@@ -305,7 +305,7 @@ export default function ChatPage() {
           if (inputRef.current)
             inputRef.current.placeholder = interim
               ? "… " + interim
-              : "Ask anything / Pose ta question";
+              : "Ask anything";
         };
         recognition.onerror = () => {
           setRecording(false);
@@ -334,7 +334,7 @@ export default function ChatPage() {
       recognitionRef.current?.stop();
       setRecording(false);
       if (inputRef.current)
-        inputRef.current.placeholder = "Ask anything / Pose ta question";
+        inputRef.current.placeholder = "Ask anything";
     }
   }
 
@@ -400,10 +400,10 @@ export default function ChatPage() {
         setArticles(arts.length ? arts : null);
         setUsedArticles(null);
         const listMd = arts.length
-          ? `Sources trouvées:\n\n${arts
+          ? `Sources found:\n\n${arts
               .map((a, i) => `${i + 1}. [${a.title}](${a.link})`)
               .join("\n")}`
-          : "Aucune source trouvée.";
+          : "No sources found.";
         const replyList: Message = {
           id: crypto.randomUUID(),
           role: "assistant",
@@ -666,10 +666,10 @@ export default function ChatPage() {
             )}
               <div>
                 <h1 className="text-5xl font-black mb-4 drop-shadow">
-                  Hey, Maqsoud.
+                  Hey, You.
                 </h1>
                 <p className="text-2xl font-medium mb-4 drop-shadow">
-                  Prêt à plonger dans les recherches fascinantes de la NASA?
+                  Ready to dive into the fascinating research of NASA?
                 </p>
               </div>
               {/* Centered input form before first message */}
@@ -748,7 +748,7 @@ export default function ChatPage() {
                   </div>
                 </div>
                 <p className="text-[10px] text-center mt-3 text-neutral-500">
-                  L&apos;IA peut se tromper. / AI may make mistakes.
+                  AI may make mistakes.
                 </p>
               </form>
             </div>
@@ -915,7 +915,7 @@ export default function ChatPage() {
                 <textarea
                   ref={inputRef}
                   className="flex-1 bg-transparent outline-none text-sm placeholder-neutral-500 resize-none leading-relaxed min-h-[24px] max-h-40 scroll-hide"
-                  placeholder="Ask anything / Pose ta question"
+                  placeholder="Ask anything"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKey}
@@ -928,9 +928,9 @@ export default function ChatPage() {
                     title={
                       speechSupported
                         ? recording
-                          ? "Arrêter la dictée"
-                          : "Dicter un message"
-                        : "Reconnaissance vocale non supportée"
+                          ? "Stop dictation"
+                          : "Dictation"
+                        : "Speech recognition not supported"
                     }
                     className={`p-2 transition ${
                       speechSupported
@@ -984,7 +984,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <p className="text-[10px] text-center mt-2 text-neutral-500">
-                L&apos;IA peut se tromper. / AI may make mistakes.
+                AI can make mistakes.
               </p>
             </div>
           </form>
@@ -1003,20 +1003,20 @@ export default function ChatPage() {
           >
             <button
               type="button"
-              aria-label="Fermer"
+              aria-label="Close"
               className="absolute -top-10 right-0 text-neutral-300 hover:text-white transition"
               onClick={() => setLightbox(null)}
             >
-              ✕ Fermer (Esc)
+              ✕ Close (Esc)
             </button>
             <a
               href={lightbox.src}
               target="_blank"
               rel="noopener noreferrer"
               className="absolute -top-10 left-0 text-neutral-300 hover:text-white underline"
-              aria-label="Ouvrir l'image d'origine dans un nouvel onglet"
+              aria-label="Open original in new tab"
             >
-              Ouvrir l’original ↗
+              Open original ↗
             </a>
             <Image
               src={lightbox.src}
