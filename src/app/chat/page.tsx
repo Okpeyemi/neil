@@ -3,8 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Image from "next/image";
-import { useTranslations } from "next-intl";
-import { useLocaleController } from "@/i18n/LanguageProvider";
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -57,7 +56,6 @@ const MarkdownImage: React.FC<{ src?: string; alt?: string; onOpenLightbox?: (sr
   const [src, setSrc] = useState<string>(props.src || "");
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const tUi = useTranslations("ui");
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     try {
       const el = e.currentTarget;
@@ -95,7 +93,7 @@ const MarkdownImage: React.FC<{ src?: string; alt?: string; onOpenLightbox?: (sr
         style={{ aspectRatio: aspectRatio ?? 16/9, maxHeight: "90vh" }}
         onClick={() => props.onOpenLightbox?.(extractOriginalSrc(src || props.src) || "", props.alt)}
         role="button"
-        aria-label={tUi("image.viewFullscreen")}
+        aria-label="Voir l'image en plein écran"
       >
         <Image
           ref={imgRef}
@@ -136,14 +134,10 @@ export default function ChatPage() {
   const [userMode, setUserMode] = useState<UserMode>("Découverte");
   const [randomArticles, setRandomArticles] = useState<Article[] | null>(null);
   const [randomLoading, setRandomLoading] = useState<boolean>(false);
-  const { locale, setLocale } = useLocaleController();
-  const t = useTranslations("language");
-  const tUi = useTranslations("ui");
-  const tMode = useTranslations("mode");
 
-  const MODE_OPTIONS: { label: string; key: UserMode; icon: React.ReactNode; desc: string }[] = [
+  const MODE_OPTIONS: { label: UserMode; key: UserMode; icon: React.ReactNode; desc: string }[] = [
     {
-      label: tMode("discovery.label"),
+      label: "Découverte",
       key: "Découverte",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -151,10 +145,10 @@ export default function ChatPage() {
           <path d="M16 8l-4 8-4-4 8-4z" />
         </svg>
       ),
-      desc: tMode("discovery.desc"),
+      desc: "Réponse générale et équilibrée",
     },
     {
-      label: tMode("scientists.label"),
+      label: "Scientifiques",
       key: "Scientifiques",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -162,10 +156,10 @@ export default function ChatPage() {
           <path d="M9 2v6l-5 9a4 4 0 0 0 3.5 6h9A4 4 0 0 0 20 17l-5-9V2" />
         </svg>
       ),
-      desc: tMode("scientists.desc"),
+      desc: "Focalisée méthodes, données, citations",
     },
     {
-      label: tMode("investors.label"),
+      label: "Investisseurs",
       key: "Investisseurs",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -173,10 +167,10 @@ export default function ChatPage() {
           <path d="M7 15l4-4 3 3 4-6" />
         </svg>
       ),
-      desc: tMode("investors.desc"),
+      desc: "Marché, ROI, risques, feuille de route",
     },
     {
-      label: tMode("architects.label"),
+      label: "Architects",
       key: "Architects",
       icon: (
         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -185,22 +179,9 @@ export default function ChatPage() {
           <path d="M12 15v6" />
         </svg>
       ),
-      desc: tMode("architects.desc"),
+      desc: "Architecture, intégration, contraintes",
     },
   ];
-
-  function uiModeLabel(m: UserMode): string {
-    switch (m) {
-      case "Scientifiques":
-        return tMode("scientists.label");
-      case "Investisseurs":
-        return tMode("investors.label");
-      case "Architects":
-        return tMode("architects.label");
-      default:
-        return tMode("discovery.label");
-    }
-  }
 
   function toServerMode(m: UserMode): "decouverte" | "scientifiques" | "investisseurs" | "architects" {
     switch (m) {
@@ -324,7 +305,7 @@ export default function ChatPage() {
           if (inputRef.current)
             inputRef.current.placeholder = interim
               ? "… " + interim
-              : tUi("placeholder");
+              : "Ask anything / Pose ta question";
         };
         recognition.onerror = () => {
           setRecording(false);
@@ -353,7 +334,7 @@ export default function ChatPage() {
       recognitionRef.current?.stop();
       setRecording(false);
       if (inputRef.current)
-        inputRef.current.placeholder = tUi("placeholder");
+        inputRef.current.placeholder = "Ask anything / Pose ta question";
     }
   }
 
@@ -584,7 +565,7 @@ export default function ChatPage() {
     <div className="min-h-screen w-full bg-[url('/space-background.jpg')] bg-cover bg-center bg-fixed">
       <div className="flex flex-col items-center justify-center h-screen w-full mx-auto bg-black/60 backdrop-blur-sm sm:px-4 py-4">
         {/* Mode selector (shadcn-style) */}
-        <div className="w-full flex justify-between px-4 mb-2">
+        <div className="w-full px-4 mb-2">
           <div className="relative inline-block text-left">
             <div className="group">
               <button
@@ -598,7 +579,7 @@ export default function ChatPage() {
                 aria-expanded="false"
               >
                 {MODE_OPTIONS.find((o) => o.key === userMode)?.icon}
-                <span>{uiModeLabel(userMode)}</span>
+                <span>{userMode}</span>
                 <svg viewBox="0 0 24 24" className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 9l6 6 6-6" />
                 </svg>
@@ -629,57 +610,6 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
-          <div className="relative inline-block text-left">
-            <div className="group">
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900/80 px-3 py-2 text-sm text-neutral-200 shadow-sm hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
-                onClick={(e) => {
-                  const el = (e.currentTarget.nextSibling as HTMLElement) || null;
-                  if (el) el.classList.toggle("hidden");
-                }}
-                aria-haspopup="listbox"
-                aria-expanded="false"
-              >
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M2 12h20M12 2a15 15 0 0 0 0 20M12 2a15 15 0 0 1 0 20" />
-                </svg>
-                <span>{locale === 'fr' ? t('fr') : t('en')}</span>
-                <svg viewBox="0 0 24 24" className="w-4 h-4 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              <div className="absolute right-0 mt-1 min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-900/95 shadow-xl hidden z-20">
-                <ul role="listbox" className="max-h-80 overflow-auto py-1">
-                  <li
-                    role="option"
-                    aria-selected={locale === 'en'}
-                    onClick={(e) => {
-                      setLocale('en');
-                      const parent = (e.currentTarget.parentElement?.parentElement) as HTMLElement | null;
-                      parent?.classList.add('hidden');
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-800 ${locale === 'en' ? 'bg-neutral-800' : ''}`}
-                  >
-                    <span className="text-sm text-neutral-100">{t('en')}</span>
-                  </li>
-                  <li
-                    role="option"
-                    aria-selected={locale === 'fr'}
-                    onClick={(e) => {
-                      setLocale('fr');
-                      const parent = (e.currentTarget.parentElement?.parentElement) as HTMLElement | null;
-                      parent?.classList.add('hidden');
-                    }}
-                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-neutral-800 ${locale === 'fr' ? 'bg-neutral-800' : ''}`}
-                  >
-                    <span className="text-sm text-neutral-100">{t('fr')}</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
         </div>
         <div
           className="flex-1 px-4 w-full max-w-4xl overflow-auto scroll-hide"
@@ -690,7 +620,7 @@ export default function ChatPage() {
             {/* Random articles previews above the input */}
             {(randomLoading || (randomArticles && randomArticles.length > 0)) && (
               <div className="w-full max-w-3xl mx-auto">
-                <h3 className="text-sm font-bold text-neutral-200 mb-2">{tUi("randomArticlesTitle")}</h3>
+                <h3 className="text-sm font-bold text-neutral-200 mb-2">Articles de la NASA</h3>
                 {randomLoading && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -736,10 +666,10 @@ export default function ChatPage() {
             )}
               <div>
                 <h1 className="text-5xl font-black mb-4 drop-shadow">
-                  {tUi("greeting", { name: "Maqsoud" })}
+                  Hey, Maqsoud.
                 </h1>
                 <p className="text-2xl font-medium mb-4 drop-shadow">
-                  {tUi("tagline")}
+                  Prêt à plonger dans les recherches fascinantes de la NASA?
                 </p>
               </div>
               {/* Centered input form before first message */}
@@ -748,7 +678,7 @@ export default function ChatPage() {
                   <textarea
                     ref={inputRef}
                     className="flex-1 bg-transparent outline-none text-sm placeholder-neutral-500 resize-none leading-relaxed min-h-[24px] max-h-40 scroll-hide scroll-hide"
-                    placeholder={tUi("placeholder")}
+                    placeholder="Ask anything / Pose ta question"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKey}
@@ -761,8 +691,10 @@ export default function ChatPage() {
                       onClick={toggleRecording}
                       title={
                         speechSupported
-                          ? (recording ? tUi("mic.stop") : tUi("mic.start"))
-                          : tUi("mic.unsupported")
+                          ? recording
+                            ? "Arrêter la dictée"
+                            : "Dicter un message"
+                          : "Reconnaissance vocale non supportée"
                       }
                       className={`p-2 transition cursor-pointer ${
                         speechSupported
@@ -815,7 +747,9 @@ export default function ChatPage() {
                     </button>
                   </div>
                 </div>
-                <p className="text-[10px] text-center mt-3 text-neutral-500">{tUi("disclaimer")}</p>
+                <p className="text-[10px] text-center mt-3 text-neutral-500">
+                  L&apos;IA peut se tromper. / AI may make mistakes.
+                </p>
               </form>
             </div>
           )}
@@ -945,7 +879,7 @@ export default function ChatPage() {
                 )}
                 {m.role === "user" && (
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 border border-blue-300/40 flex items-center justify-center text-[10px] font-semibold text-white shadow">
-                    {tUi("you")}
+                    YOU
                   </div>
                 )}
               </div>
@@ -981,7 +915,7 @@ export default function ChatPage() {
                 <textarea
                   ref={inputRef}
                   className="flex-1 bg-transparent outline-none text-sm placeholder-neutral-500 resize-none leading-relaxed min-h-[24px] max-h-40 scroll-hide"
-                  placeholder={tUi("placeholder")}
+                  placeholder="Ask anything / Pose ta question"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKey}
@@ -993,8 +927,10 @@ export default function ChatPage() {
                     onClick={toggleRecording}
                     title={
                       speechSupported
-                        ? (recording ? tUi("mic.stop") : tUi("mic.start"))
-                        : tUi("mic.unsupported")
+                        ? recording
+                          ? "Arrêter la dictée"
+                          : "Dicter un message"
+                        : "Reconnaissance vocale non supportée"
                     }
                     className={`p-2 transition ${
                       speechSupported
@@ -1047,7 +983,9 @@ export default function ChatPage() {
                   </button>
                 </div>
               </div>
-              <p className="text-[10px] text-center mt-2 text-neutral-500">{tUi("disclaimer")}</p>
+              <p className="text-[10px] text-center mt-2 text-neutral-500">
+                L&apos;IA peut se tromper. / AI may make mistakes.
+              </p>
             </div>
           </form>
         )}
@@ -1065,20 +1003,20 @@ export default function ChatPage() {
           >
             <button
               type="button"
-              aria-label={tUi("lightbox.close")}
+              aria-label="Fermer"
               className="absolute -top-10 right-0 text-neutral-300 hover:text-white transition"
               onClick={() => setLightbox(null)}
             >
-              ✕ {tUi("lightbox.close")}
+              ✕ Fermer (Esc)
             </button>
             <a
               href={lightbox.src}
               target="_blank"
               rel="noopener noreferrer"
               className="absolute -top-10 left-0 text-neutral-300 hover:text-white underline"
-              aria-label={tUi("lightbox.openOriginalAria")}
+              aria-label="Ouvrir l'image d'origine dans un nouvel onglet"
             >
-              {tUi("lightbox.openOriginal")}
+              Ouvrir l’original ↗
             </a>
             <Image
               src={lightbox.src}
