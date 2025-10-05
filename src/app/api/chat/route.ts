@@ -36,7 +36,7 @@ const DEFAULT_CSV_URL = 'https://raw.githubusercontent.com/jgalazka/SB_publicati
 function isSpaceBiologyQuery(text: string): boolean {
   const lowered = text.toLowerCase();
   return [
-    'space biology','biologie spatiale','microgravity','micro-gravity','microgravité','iss',
+    'space biology','biologie spatiale','microgravity','micro-gravity','microgravité','iss', 'nasa',
     'international space station','spatial biology','spaceflight','space flight','gravity biology',
     'zero g','0g','space bio','gravité','gravity','biologie de l\'espace','biology of space','space environment'
   ].some(k => lowered.includes(k));
@@ -172,14 +172,20 @@ function normalizeBackslashesForJson(s: string): string {
   return s.replace(/\\(?!["\\\/bfnrtu])/g, '\\\\');
 }
 
-function modeSystemGuidance(mode?: 'decouverte' | 'scientifiques' | 'investisseurs' | 'architects'): string {
-  switch (mode) {
+function modeSystemGuidance(mode?: string): string {
+  const m = (mode || '').toLowerCase();
+  switch (m) {
     case 'scientifiques':
+    case 'scientific':
       return 'Audience: scientific. Use precise, rigorous language. Emphasize methods, quantitative results, uncertainties, and cite sources using [n]. Include concise explanations but avoid hype.';
     case 'investisseurs':
+    case 'investor':
       return 'Audience: investors. Focus on market impact, TAM/SAM/SOM when relevant, ROI, risks, timelines, milestones, team and moat. Be concise, clear, and outcome-oriented.';
     case 'architects':
+    case 'architect':
       return 'Audience: software/solution architects. Provide high-level architecture, components, integration points, data flows, performance considerations, SLAs, trade-offs, risks, and step-by-step implementation plan.';
+    case 'decouverte':
+    case 'discovery':
     default:
       return 'Audience: general discovery. Keep explanations balanced, accessible, and actionable.';
   }
@@ -220,12 +226,12 @@ export async function POST(req: NextRequest) {
     const spaceBio = isSpaceBiologyQuery(userText);
     console.log('INTENT', { greet, capability, spaceBio });
 
-    if (greet && !spaceBio && !capability) {
+    if (false) {
       const md = `👋 Salut ! Comment puis-je t'aider aujourd'hui ?\n\n- **Discuter** d'un sujet.\n- **Demander** ce que je peux faire.\n- **Poser** une question sur la biologie spatiale.`;
       return new Response(JSON.stringify({ mode: 'chitchat', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (capability) {
+    if (false) {
       if (spaceBio) {
         // Light-weight selection only; do not scrape/fuse yet
         let articles = await getArticles();
@@ -247,7 +253,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (isSpaceBiologyQuery(userText)) {
+    if (true) {
       relatedArticles = await getArticles();
       if (relatedArticles.length) {
         // Selection: score titles against translated English query and pick top N

@@ -93,7 +93,7 @@ const MarkdownImage: React.FC<{ src?: string; alt?: string; onOpenLightbox?: (sr
         style={{ aspectRatio: aspectRatio ?? 16/9, maxHeight: "90vh" }}
         onClick={() => props.onOpenLightbox?.(extractOriginalSrc(src || props.src) || "", props.alt)}
         role="button"
-        aria-label="Voir l'image en plein écran"
+        aria-label="Show in full screen"
       >
         <Image
           ref={imgRef}
