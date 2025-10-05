@@ -1,4 +1,4 @@
-## NASA Scientific Articles Chat (RAG + Web Search) – Phase 1
+## NASA Scientific Articles Chat (RAG + Web Search)
 
 This project aims to build a Retrieval-Augmented Generation (RAG) chatbot over NASA / space biology related scientific articles (PubMed Central). It scrapes article HTML, stores structured JSON, (later) indexes embeddings into a vector database, and serves a chat UI that answers user questions using local context first, falling back to web search.
 
