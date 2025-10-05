@@ -21,11 +21,11 @@ interface ArticleRow {
 function modeStyle(mode: ChatMode): string {
   switch (mode) {
     case 'Scientific':
-      return 'Focused on methods, data, citations';
+      return 'Scientists who are generating new hypotheses';
     case 'Investor':
-      return 'Focused on market, ROI, risks, roadmap';
+      return 'Managers identifying opportunities for investment';
     case 'Architect':
-      return 'Focused on architecture, integration, constraints';
+      return 'Mission architects looking to explore the Moon and Mars safely and efficiently';
     case 'Discovery':
     default:
       return 'General and balanced response';
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
 
     if (!nasa) {
       // General chat without Supabase context — stream tokens
-      const system = `Tu es un assistant utile et concis. Réponds en français. Utilise le markdown quand pertinent. ${modeStyle(mode)}`;
+      const system = `Tu es un assistant utile et concis. Réponds dans la langue du message de l'utilisateur. Utilise le markdown. ${modeStyle(mode)}`;
       const encoder = new TextEncoder();
       const stream = await client.chat.completions.create({
         model: 'openai/gpt-oss-20b',
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
     const { text: context, sources, images } = buildContext(docs || []);
 
     const system =
-      `Tu es un assistant qui répond STRICTEMENT en te basant sur le contexte fourni (articles NASA/PMC). Si l’information manque, dis-le clairement. Réponds en français. Utilise le markdown. ${modeStyle(mode)}\n\nFormate ta réponse en sections: \n### Introduction\n### Résumé\n### Conclusion\n### Sources (liens)\n### Figures (si disponibles)`;
+      `Tu es un assistant qui répond STRICTEMENT en te basant sur le contexte fourni (articles NASA/PMC). Si l’information manque, dis-le clairement. Réponds dans la langue du message de l'utilisateur. Utilise le markdown. ${modeStyle(mode)}\n\nFormate ta réponse en sections: \n### Introduction\n### Résumé\n### Conclusion\n### Sources (liens)`;
     const user = `Question: ${question}\n\nContexte:\n${context || '(Aucun contexte trouvé)'}\n\nConsigne: Structure la réponse comme indiqué et reste précis.`;
 
     const encoder = new TextEncoder();
@@ -191,8 +191,19 @@ export async function POST(req: NextRequest) {
     const srcMd = sources.length
       ? `\n\n### Sources\n${sources.map((s) => `- [${s.title}](${s.url})`).join('\n')}`
       : '';
+
     const figsMd = images && images.length
-      ? `\n\n### Figures\n${images.slice(0, 6).map((im) => `![${im.alt || 'figure'}](${im.src})${im.caption ? `\n<small>${im.caption}</small>` : ''}`).join('\n\n')}`
+      ? `\n\n### Figures\n${images
+        .slice(0, 6)
+        .map((im) => {
+        const alt = (im.alt || 'figure').replace(/\s+/g, ' ').trim();
+        const caption = (im.caption || '').replace(/\s+/g, ' ').trim();
+        // Use plain Markdown: image followed by an italic caption on its own line
+        return caption
+          ? `![${alt}](${im.src})\n\n*${caption}*`
+          : `![${alt}](${im.src})`;
+        })
+        .join('\n\n')}`
       : '';
     return new Response(
       new ReadableStream({
