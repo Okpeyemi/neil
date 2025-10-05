@@ -16,6 +16,46 @@ interface Article {
   link: string;
 }
 
+// Inline image component with skeleton placeholder and proxy fallback
+const MarkdownImage: React.FC<React.ImgHTMLAttributes<HTMLImageElement>> = (props) => {
+  const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  return (
+    <div className="relative w-full my-1">
+      {!loaded && (
+        <div className="w-full h-40 max-h-[360px] bg-neutral-800/60 rounded-md animate-pulse" />
+      )}
+      <img
+        ref={imgRef}
+        {...props}
+        onLoad={(e) => {
+          setLoaded(true);
+          props.onLoad && props.onLoad(e);
+        }}
+        onError={(e) => {
+          try {
+            const el = e.currentTarget as HTMLImageElement;
+            const tried = (el as any).dataset?.triedProxy === '1';
+            if (!tried && el.src && !el.src.startsWith('/api/image?url=') && !el.src.startsWith('data:')) {
+              (el as any).dataset = { ...(el as any).dataset, triedProxy: '1' };
+              el.src = `/api/image?url=${encodeURIComponent(el.src)}`;
+            }
+          } catch { /* ignore */ }
+          props.onError && props.onError(e);
+        }}
+        style={{
+          maxWidth: '100%',
+          height: 'auto',
+          display: 'block',
+          margin: '0.25rem 0',
+          opacity: loaded ? 1 : 0,
+          transition: 'opacity 200ms ease',
+        }}
+      />
+    </div>
+  );
+};
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [articles, setArticles] = useState<Article[] | null>(null);
@@ -429,27 +469,7 @@ export default function ChatPage() {
                             className="text-blue-400 hover:underline"
                           />
                         ),
-                        img: ({ ...props }) => (
-                          <img
-                            {...props}
-                            onError={(e) => {
-                              try {
-                                const el = e.currentTarget as HTMLImageElement;
-                                const tried = (el as any).dataset?.triedProxy === '1';
-                                if (!tried && el.src && !el.src.startsWith('/api/image?url=') && !el.src.startsWith('data:')) {
-                                  (el as any).dataset = { ...(el as any).dataset, triedProxy: '1' };
-                                  el.src = `/api/image?url=${encodeURIComponent(el.src)}`;
-                                }
-                              } catch { /* ignore */ }
-                            }}
-                            style={{
-                              maxWidth: "100%",
-                              height: "auto",
-                              display: "block",
-                              margin: "0.25rem 0",
-                            }}
-                          />
-                        ),
+                        img: ({ ...props }) => <MarkdownImage {...props} />,
                         h1: ({ ...props }) => (
                           <h1
                             {...props}
