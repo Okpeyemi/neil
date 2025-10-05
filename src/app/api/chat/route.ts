@@ -61,6 +61,46 @@ function isCapabilityAsk(text: string): boolean {
   );
 }
 
+function detectLangFromText(text: string): 'fr' | 'en' {
+  const t = (text || '').toLowerCase();
+  const hasAccent = /[àâäçéèêëîïôöùûü]/.test(t);
+  const frWords = /\b(le|la|les|un|une|des|du|de|et|est|avec|sans|pour|bonjour|salut|quoi|pourquoi|comment|qu['’]est-ce|peux[- ]tu|vous|tu)\b/.test(t);
+  return (hasAccent || frWords) ? 'fr' : 'en';
+}
+
+function capabilitiesMessage(lang: 'fr' | 'en'): string {
+  if (lang === 'fr') {
+    return `### Ce que je peux faire
+
+- **Trouver** et **classer** des publications pertinentes en biologie spatiale (NASA, ISS, microgravité).
+- **Extraire** le contenu principal et les **figures** utiles.
+- **Fusionner** plusieurs sources en un rendu Markdown structuré avec **citations [n]**.
+- **Résumer** rapidement des ensembles d’articles.
+- **Comparer** des résultats (tableaux/points clés).
+
+Essaye :
+- “Effets de la microgravité sur l’immunité humaine”
+- “Contre‑mesures pour l’atrophie musculaire”
+- “Culture des plantes en apesanteur”
+
+Je suis spécialisé en biologie spatiale. Pose-moi une question dans ce domaine et je répondrai en français si tu écris en français.`;
+  }
+  return `### What I can do
+
+- **Find** and **rank** relevant space‑biology publications (NASA, ISS, microgravity).
+- **Extract** main content and helpful **figures**.
+- **Fuse** multiple sources into structured Markdown with **citations [n]**.
+- **Summarize** sets of papers.
+- **Compare** findings (tables/key bullets).
+
+Try:
+- “Microgravity effects on human immunity”
+- “Countermeasures for muscle atrophy”
+- “Plant growth in zero‑g”
+
+I’m focused on space biology. Ask within this domain and I’ll reply in your language (English here).`;
+}
+
 function parseCsv(csv: string): Article[] {
   // Expect first row headers including title, link (or similar). We'll split by newline, simple CSV (no embedded commas assumption).
   const lines = csv.split(/\r?\n/).filter(l => l.trim());
@@ -205,8 +245,9 @@ export async function POST(req: NextRequest) {
 
     const userLast = body.messages[body.messages.length - 1];
     const userText = userLast?.content || '';
-    // Detection: translate to English for selection
-    const englishQuery = await translateToEnglish(userText, apiKey, primaryModel);
+    const userLang: 'fr' | 'en' = detectLangFromText(userText);
+    // Defer translation; only compute when needed for space-biology scoring/fusion
+    let englishQuery: string | null = null;
 
     let relatedArticles: Article[] = [];
     const augmentedMessages = body.messages.map(m => ({ role: m.role, content: m.content }));
@@ -221,16 +262,20 @@ export async function POST(req: NextRequest) {
     console.log('INTENT', { greet, capability, spaceBio });
 
     if (greet && !spaceBio && !capability) {
-      const md = `👋 Salut ! Comment puis-je t'aider aujourd'hui ?\n\n- **Discuter** d'un sujet.\n- **Demander** ce que je peux faire.\n- **Poser** une question sur la biologie spatiale.`;
+      const md = userLang === 'fr'
+        ? `👋 Salut ! Comment puis‑je t’aider aujourd’hui ?\n\n- **Discuter** d’un sujet.\n- **Demander** ce que je peux faire.\n- **Poser** une question sur la biologie spatiale.`
+        : `👋 Hi! How can I help today?\n\n- **Chat** about a topic.\n- **Ask** what I can do.\n- **Ask** a question in space biology.`;
       return new Response(JSON.stringify({ mode: 'chitchat', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
     }
 
     if (capability) {
       if (spaceBio) {
+        // Compute translation only now as it will be used for scoring
+        englishQuery = await translateToEnglish(userText, apiKey, primaryModel);
         // Light-weight selection only; do not scrape/fuse yet
         let articles = await getArticles();
         if (articles.length) {
-          const tokens = englishQuery.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+          const tokens = (englishQuery || userText).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
           const scored = articles.map(a => {
             const at = a.title.toLowerCase();
             const score = tokens.reduce((acc, t) => acc + (at.includes(t) ? 1 : 0), 0);
@@ -239,19 +284,23 @@ export async function POST(req: NextRequest) {
           articles = scored.length ? scored : articles.slice(0, 10);
         }
         const sources = articles.map((a, i) => `- [${i+1}] [${a.title}](${a.link})`).join('\n');
-        const md = `### Ce que je peux faire (biologie spatiale)\n\n- **Trouver** et **sélectionner** des articles pertinents selon ta requête.\n- **Extraire** le contenu principal et les **figures utiles**.\n- **Fusionner** plusieurs sources en un \n  rendu structuré (Introduction, Résultats, Conclusion) avec **citations [n]** et **images** pertinentes.\n- **Résumer** rapidement des ensembles d'articles.\n- **Comparer** des résultats via **tableaux Markdown** ou décrire des **graphes** simples.\n\nDis-moi si tu veux que je **fasse une fusion**, un **résumé**, ou une **comparaison**.\n\n### Sources potentielles\n${sources || '- (aucune source trouvée pour le moment)'}`;
+        const md = userLang === 'fr'
+          ? `### Ce que je peux faire (biologie spatiale)\n\n- **Trouver** et **sélectionner** des articles pertinents selon ta requête.\n- **Extraire** le contenu principal et les **figures utiles**.\n- **Fusionner** plusieurs sources en un rendu structuré (Introduction, Résultats, Conclusion) avec **citations [n]** et **images** pertinentes.\n- **Résumer** rapidement des ensembles d’articles.\n- **Comparer** des résultats via **tableaux Markdown** ou décrire des **graphes** simples.\n\nDis‑moi si tu veux que je **fasse une fusion**, un **résumé**, ou une **comparaison**.\n\n### Sources potentielles\n${sources || '- (aucune source trouvée pour le moment)'}`
+          : `### What I can do (space biology)\n\n- **Find** and **select** relevant articles for your query.\n- **Extract** the main content and useful **figures**.\n- **Fuse** multiple sources into a structured answer (Introduction, Results, Conclusion) with **citations [n]** and relevant **images**.\n- **Summarize** sets of articles.\n- **Compare** results via **Markdown tables** or simple graph descriptions.\n\nTell me if you want a **fusion**, a **summary**, or a **comparison**.\n\n### Potential sources\n${sources || '- (no sources found yet)'}`;
         return new Response(JSON.stringify({ mode: 'capabilities', markdown: md, articles }), { headers: { 'Content-Type': 'application/json' } });
       } else {
-        const md = `### Ce que je peux faire\n\n- **Répondre** aux questions générales.\n- **Analyser** des requêtes en biologie spatiale.\n- **Sélectionner** des articles pertinents et **extraire** le contenu et les figures.\n- **Fusionner** plusieurs sources en un rendu Markdown structuré (Introduction, Résultats, Conclusion), avec **images pertinentes** et **citations [n]**, puis lister les **Sources**.\n- **Résumer** rapidement plusieurs articles.\n- **Comparer** des résultats via **tableaux Markdown** ou décrire des **graphes** simples.\n\nDis-moi ton besoin (ex: “analyse en microgravité ?”), et j'adapterai la démarche.`;
+        const md = capabilitiesMessage(userLang);
         return new Response(JSON.stringify({ mode: 'capabilities', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
       }
     }
 
     if (isSpaceBiologyQuery(userText)) {
+      // Compute translation once for this branch
+      englishQuery = await translateToEnglish(userText, apiKey, primaryModel);
       relatedArticles = await getArticles();
       if (relatedArticles.length) {
         // Selection: score titles against translated English query and pick top N
-        const tokens = englishQuery.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+        const tokens = (englishQuery || userText).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
         const scored = relatedArticles.map(a => {
           const at = a.title.toLowerCase();
             const score = tokens.reduce((acc, t) => acc + (at.includes(t) ? 1 : 0), 0);
@@ -294,7 +343,7 @@ export async function POST(req: NextRequest) {
                   { role: 'system', content: 'You merge multiple scientific documents into a single structured answer. Follow the JSON schema exactly.' },
                   { role: 'system', content: modeSystem },
                   { role: 'user', content: fusionPrompt },
-                  { role: 'user', content: JSON.stringify({ queryOriginal: userText, queryEnglish: englishQuery, sources: docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url })), documents: docsForPrompt }).slice(0, 60000) }
+                  { role: 'user', content: JSON.stringify({ queryOriginal: userText, queryEnglish: englishQuery || userText, sources: docsForPrompt.map(d => ({ idx: d.idx, title: d.title, url: d.url })), documents: docsForPrompt }).slice(0, 60000) }
                 ],
               }),
             });
@@ -441,6 +490,12 @@ export async function POST(req: NextRequest) {
       return new Response(JSON.stringify({ mode: 'articles_summary', summary, articles: scraped }), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    // If not space-biology, avoid LLM call and guide the user instead
+    if (!spaceBio) {
+      const md = capabilitiesMessage(userLang);
+      return new Response(JSON.stringify({ mode: 'capabilities', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
     // Fallback: normal primary chat completion
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -454,6 +509,7 @@ export async function POST(req: NextRequest) {
         model: primaryModel,
         messages: [
           { role: 'system', content: modeSystem },
+          { role: 'system', content: userLang === 'fr' ? 'Réponds en français.' : 'Answer in English.' },
           ...augmentedMessages,
         ],
         temperature: 0.7,

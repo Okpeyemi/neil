@@ -4,7 +4,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38BDF8?logo=tailwind-css)](https://tailwindcss.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38BDF8?logo=tailwind-css)](https://taialwindcss.com/)
 [![i18n](https://img.shields.io/badge/Internationalization-next--intl-8A2BE2)](https://next-intl-docs.vercel.app/)
 
 > An AI-powered conversational interface to explore, query, and summarize NASA bioscience experiment publications (608+ studies) using natural language (text and voice).  
@@ -219,20 +219,17 @@ npm run dev
 Create `.env.local`:
 
 ```
-# Public base URL
-NEXT_PUBLIC_SITE_URL=https://neil-eight.vercel.app/
+# Public base URL local
+OPENROUTER_REFERER=http://localhost:3000
 
 # Default locale
 NEXT_PUBLIC_DEFAULT_LOCALE=en
 
-# AI Provider (example placeholders)
-OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=...
-
-# Vector store config (future)
-VECTOR_DB_URL=
-VECTOR_DB_API_KEY=
+# AI Provider
+OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
+OPENROUTER_MODEL_FUSION=gpt-oss-20b
+OPENROUTER_API_KEY=
+OPENROUTER_TITLE=neil-engine
 ```
 
 ---
@@ -293,34 +290,7 @@ VECTOR_DB_API_KEY=
 
 ---
 
-## 18. Roadmap (Detailed)
-
-| Phase | Focus | Examples |
-|-------|-------|----------|
-| 0.1 (Now) | Chat + base retrieval | Text + audio input |
-| 0.2 | Citations + provenance | Collapsible evidence blocks |
-| 0.3 | Knowledge graph prototype | Entity / relation extraction |
-| 0.4 | Gap analysis views | Heatmaps, cluster timelines |
-| 0.5 | Trend analytics | Time-series of experiment topics |
-| 0.6 | Export & API | `/api/query`, JSON payload |
-| 0.7 | Dashboard mode | Dual-pane: Chat + Visualization |
-| 1.0 | Public beta | Stability, documentation, tests |
-
----
-
-## 19. Testing (Planned)
-
-| Test Type | Scope |
-|-----------|-------|
-| Unit | Parsing, chunking, ranker |
-| Integration | Retrieval + answer synthesis |
-| E2E | User query flows (text + audio) |
-| Regression | Dataset changes vs. answer drift |
-| Evaluation | BLEU/ROUGE / factuality heuristics (manual augmentation) |
-
----
-
-## 20. Contribution Guidelines
+## 18. Contribution Guidelines
 
 1. Fork repo
 2. Create a feature branch: `feat/<short-name>`
@@ -333,7 +303,7 @@ VECTOR_DB_API_KEY=
 
 ---
 
-## 21. Limitations (Current)
+## 19. Limitations (Current)
 
 - No full provenance UI yet
 - No public dataset ingestion pipeline exposed
@@ -343,7 +313,7 @@ VECTOR_DB_API_KEY=
 
 ---
 
-## 22. Future Extensions
+## 20. Future Extensions
 
 - Multi-turn experiment comparison mode
 - "Insight cards" summarizing clusters
@@ -353,22 +323,15 @@ VECTOR_DB_API_KEY=
 
 ---
 
-## 23. License
-
-No license file currently present.  
-Recommendation: Add `LICENSE` (MIT preferred for openness unless constraints apply).
-
----
-
-## 24. Acknowledgements
+## 21. Acknowledgements
 
 - NASA Biological & Physical Sciences Division publications dataset (challenge context)
-- Open-source ecosystem (Next.js, React, Tailwind, next-intl, remark)
+- Open-source ecosystem (Next.js, React, Tailwind, remark)
 - Future: credit embedding + LLM providers
 
 ---
 
-## 25. Disclaimer
+## 22. Disclaimer
 
 This tool synthesizes publicly available research content.  
 It does NOT provide medical advice or official NASA policy guidance.  
