@@ -138,7 +138,23 @@ export default function ChatPage() {
       } = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
       setMode(data.mode || null);
-      if (data.mode === "articles_only") {
+      // Generic markdown-first rendering (e.g., chitchat, capabilities)
+      if (data.markdown) {
+        console.log("GENERIC_MARKDOWN", { mode: data.mode, mdLen: data.markdown.length });
+        const replyMd: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          markdown: data.markdown,
+        };
+        setMessages((m) => {
+          const updated = [...m, replyMd];
+          messagesRef.current = updated;
+          return updated;
+        });
+        setArticles(data.articles || null);
+        setUsedArticles(data.usedArticles || data.articles || null);
+      } else if (data.mode === "articles_only") {
         // Toujours fournir une réponse assistant même si seulement des articles
         const arts = data.articles || [];
         setArticles(arts.length ? arts : null);

@@ -33,6 +33,25 @@ function isSpaceBiologyQuery(text: string): boolean {
   ].some(k => lowered.includes(k));
 }
 
+function isGreeting(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return /\b(salut|bonjour|bonsoir|hello|hi|hey|yo)\b/.test(t);
+}
+
+function isCapabilityAsk(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return (
+    /que\s+peux[- ]tu\s+faire/.test(t) ||
+    /comment\s+peux[- ]tu\s+m[' ]?aider/.test(t) ||
+    /qu['’]est-ce\s+que\s+tu\s+peux\s+faire/.test(t) ||
+    /peux[- ]tu\s+m[' ]?aider/.test(t) ||
+    /what\s+can\s+you\s+do/.test(t) ||
+    /how\s+can\s+you\s+help/.test(t) ||
+    /what\s+can\s+you\s+help\s+me\s+with/.test(t) ||
+    /capabilit(y|ies)/.test(t)
+  );
+}
+
 function parseCsv(csv: string): Article[] {
   // Expect first row headers including title, link (or similar). We'll split by newline, simple CSV (no embedded commas assumption).
   const lines = csv.split(/\r?\n/).filter(l => l.trim());
@@ -150,6 +169,39 @@ export async function POST(req: NextRequest) {
     const augmentedMessages = body.messages.map(m => ({ role: m.role, content: m.content }));
     let articlesOnly = false;
     const wantsSummary = !!body.summarize;
+
+    // Intent routing
+    const greet = isGreeting(userText);
+    const capability = isCapabilityAsk(userText);
+    const spaceBio = isSpaceBiologyQuery(userText);
+    console.log('INTENT', { greet, capability, spaceBio });
+
+    if (greet && !spaceBio && !capability) {
+      const md = `👋 Salut ! Comment puis-je t'aider aujourd'hui ?\n\n- **Discuter** d'un sujet.\n- **Demander** ce que je peux faire.\n- **Poser** une question sur la biologie spatiale.`;
+      return new Response(JSON.stringify({ mode: 'chitchat', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (capability) {
+      if (spaceBio) {
+        // Light-weight selection only; do not scrape/fuse yet
+        let articles = await getArticles();
+        if (articles.length) {
+          const tokens = englishQuery.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+          const scored = articles.map(a => {
+            const at = a.title.toLowerCase();
+            const score = tokens.reduce((acc, t) => acc + (at.includes(t) ? 1 : 0), 0);
+            return { article: a, score };
+          }).sort((a,b) => b.score - a.score).slice(0, 10).map(s => s.article);
+          articles = scored.length ? scored : articles.slice(0, 10);
+        }
+        const sources = articles.map((a, i) => `- [${i+1}] [${a.title}](${a.link})`).join('\n');
+        const md = `### Ce que je peux faire (biologie spatiale)\n\n- **Trouver** et **sélectionner** des articles pertinents selon ta requête.\n- **Extraire** le contenu principal et les **figures utiles**.\n- **Fusionner** plusieurs sources en un \n  rendu structuré (Introduction, Résultats, Conclusion) avec **citations [n]** et **images** pertinentes.\n- **Résumer** rapidement des ensembles d'articles.\n- **Comparer** des résultats via **tableaux Markdown** ou décrire des **graphes** simples.\n\nDis-moi si tu veux que je **fasse une fusion**, un **résumé**, ou une **comparaison**.\n\n### Sources potentielles\n${sources || '- (aucune source trouvée pour le moment)'}`;
+        return new Response(JSON.stringify({ mode: 'capabilities', markdown: md, articles }), { headers: { 'Content-Type': 'application/json' } });
+      } else {
+        const md = `### Ce que je peux faire\n\n- **Répondre** aux questions générales.\n- **Analyser** des requêtes en biologie spatiale.\n- **Sélectionner** des articles pertinents et **extraire** le contenu et les figures.\n- **Fusionner** plusieurs sources en un rendu Markdown structuré (Introduction, Résultats, Conclusion), avec **images pertinentes** et **citations [n]**, puis lister les **Sources**.\n- **Résumer** rapidement plusieurs articles.\n- **Comparer** des résultats via **tableaux Markdown** ou décrire des **graphes** simples.\n\nDis-moi ton besoin (ex: “analyse en microgravité ?”), et j'adapterai la démarche.`;
+        return new Response(JSON.stringify({ mode: 'capabilities', markdown: md }), { headers: { 'Content-Type': 'application/json' } });
+      }
+    }
 
     if (isSpaceBiologyQuery(userText)) {
       relatedArticles = await getArticles();
